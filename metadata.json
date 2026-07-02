@@ -1,0 +1,6 @@
+{
+  "name": "B2 English Prep Suite",
+  "description": "An interactive preparation platform for the Cambridge B2 First examination, featuring study modules, exams, podcasts, and Google Sheets synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
