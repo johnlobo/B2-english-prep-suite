@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, Link2, Info, CheckCircle, RefreshCw, Clipboard, Check, Trash2, ArrowUpRight } from 'lucide-react';
+import { Database, Link2, Info, CheckCircle, RefreshCw, Clipboard, Check, Trash2, ArrowUpRight, Download } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Question } from '../types';
 
@@ -22,9 +22,38 @@ export default function SheetSync({
 }: SheetSyncProps) {
   const [url, setUrl] = useState(googleSheetUrl);
   const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      setError(null);
+      const res = await fetch('/api/export-excel');
+      if (!res.ok) {
+        throw new Error('No se pudo generar el archivo en el servidor');
+      }
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('text/html')) {
+        throw new Error('El servidor devolvió una página HTML en lugar de Excel. Por favor, dale unos segundos al servidor para reiniciarse e inténtalo de nuevo.');
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const tempLink = document.createElement('a');
+      tempLink.href = blobUrl;
+      tempLink.setAttribute('download', 'plantilla_b2_english.xlsx');
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      setError('Error al descargar el archivo Excel: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleSync = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,7 +276,33 @@ export default function SheetSync({
         </div>
 
         {/* Informative column / Tutorial */}
-        <div className="space-y-6">
+        <div className="space-y-6 font-sans">
+          {/* Export Card */}
+          <div className="bg-emerald-50/70 p-6 rounded-3xl border border-emerald-100 flex flex-col space-y-4">
+            <div className="flex items-center space-x-2 text-emerald-800">
+              <Database className="w-5 h-5 text-emerald-600" />
+              <h4 className="font-bold font-display text-sm text-emerald-900">Exportar Banco de Preguntas</h4>
+            </div>
+            <p className="text-xs text-emerald-800 leading-relaxed">
+              ¿Quieres crear tu propia hoja de cálculo a partir de las preguntas actuales de la aplicación? Descarga el libro de Excel completo que incluye una solapa de instrucciones de formato y otra con las preguntas de la app listas para copiar.
+            </p>
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting}
+              className="flex justify-center items-center py-2.5 px-4 border border-transparent rounded-xl shadow-md text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none cursor-pointer text-center w-full"
+            >
+              <Download className={`w-4 h-4 mr-1.5 ${exporting ? 'animate-bounce' : ''}`} />
+              {exporting ? 'Generando libro...' : 'Descargar Datos Actuales (Excel)'}
+            </button>
+            <div className="text-[10px] text-emerald-700 leading-relaxed bg-white/50 p-2.5 rounded-xl border border-emerald-100/50">
+              <strong>Estructura del archivo descargado:</strong>
+              <ul className="list-disc list-inside mt-1 space-y-1">
+                <li><strong>Solapa 1 ("Instrucciones de Uso"):</strong> Guía detallada de cada columna y ejemplos para evitar fallos.</li>
+                <li><strong>Solapa 2 ("Preguntas"):</strong> Listado real de las preguntas existentes de la app para que las copies a tu propio Google Sheets de trabajo.</li>
+              </ul>
+            </div>
+          </div>
+
           <div className="bg-indigo-50/50 p-6 rounded-3xl border border-indigo-100 flex flex-col space-y-4">
             <div className="flex items-center space-x-2 text-indigo-800">
               <Info className="w-5 h-5" />

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
-import { BookOpen, Award, FileText, CheckCircle, HelpCircle, GraduationCap, ArrowRight, Download, Sparkles, AlertCircle, Play, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BookOpen, Award, FileText, CheckCircle, HelpCircle, GraduationCap, ArrowRight, Download, Sparkles, AlertCircle, Play, RefreshCw, Edit3, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import { ModuleData, Question, UserProgress } from '../types';
 
 interface ModuleSectionProps {
@@ -32,6 +34,84 @@ export default function ModuleSection({
   const [examAnswers, setExamAnswers] = useState<{ [qId: string]: string }>({});
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [examScore, setExamScore] = useState(0);
+
+  // Study Notes state
+  const [noteText, setNoteText] = useState('');
+  const [isLoadingNote, setIsLoadingNote] = useState(false);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  useEffect(() => {
+    let active = true;
+    const fetchNote = async () => {
+      const userId = auth.currentUser?.uid;
+      if (!userId) {
+        setNoteText('');
+        return;
+      }
+      setIsLoadingNote(true);
+      setSaveStatus('idle');
+      const docId = `${userId}_M${selectedModuleIndex}`;
+      const noteRef = doc(db, 'notes', docId);
+      try {
+        const snap = await getDoc(noteRef);
+        if (active) {
+          if (snap.exists()) {
+            setNoteText(snap.data().content || '');
+          } else {
+            setNoteText('');
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to fetch study notes from Firestore:", err);
+        // Fall back to local storage
+        const localNote = localStorage.getItem(`note_M${selectedModuleIndex}`);
+        if (localNote && active) {
+          setNoteText(localNote);
+        }
+      } finally {
+        if (active) setIsLoadingNote(false);
+      }
+    };
+
+    fetchNote();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedModuleIndex, auth.currentUser?.uid]);
+
+  const handleSaveNote = async () => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+
+    setIsSavingNote(true);
+    setSaveStatus('saving');
+    const docId = `${userId}_M${selectedModuleIndex}`;
+    const noteRef = doc(db, 'notes', docId);
+
+    const payload = {
+      userId,
+      moduleId: `M${selectedModuleIndex}`,
+      content: noteText,
+      updatedAt: new Date().toISOString()
+    };
+
+    try {
+      await setDoc(noteRef, payload, { merge: true });
+      setSaveStatus('saved');
+      // Cache locally
+      localStorage.setItem(`note_M${selectedModuleIndex}`, noteText);
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    } catch (err) {
+      console.error("Failed to save study note to Firestore:", err);
+      setSaveStatus('error');
+      // Cache locally as fallback
+      localStorage.setItem(`note_M${selectedModuleIndex}`, noteText);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
 
   const currentModule = modules[selectedModuleIndex];
   if (!currentModule) return null;
@@ -275,6 +355,69 @@ export default function ModuleSection({
               </div>
             </div>
           )}
+
+          {/* Study Notes Scratchpad */}
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
+                <Edit3 className="w-3 h-3 text-indigo-500" />
+                <span>Bloc de Notas (Módulo {selectedModuleIndex + 1})</span>
+              </h3>
+              {saveStatus === 'saving' && (
+                <span className="text-[9px] font-bold text-indigo-600 flex items-center space-x-1 animate-pulse">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  <span>Guardando...</span>
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="text-[9px] font-bold text-emerald-600 flex items-center space-x-1">
+                  <Check className="w-2.5 h-2.5" />
+                  <span>Guardado</span>
+                </span>
+              )}
+              {saveStatus === 'error' && (
+                <span className="text-[9px] font-bold text-rose-500">
+                  ⚠️ Error
+                </span>
+              )}
+              {saveStatus === 'idle' && noteText && (
+                <span className="text-[9px] text-slate-400">
+                  Sin guardar
+                </span>
+              )}
+            </div>
+
+            {isLoadingNote ? (
+              <div className="py-8 text-center text-xs text-slate-400 space-y-2">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto text-slate-300" />
+                <p>Cargando notas...</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <textarea
+                  value={noteText}
+                  onChange={(e) => {
+                    setNoteText(e.target.value);
+                    if (saveStatus === 'saved') setSaveStatus('idle');
+                  }}
+                  placeholder="Escribe tus apuntes personales para este módulo aquí (phrasal verbs, trucos gramaticales, dudas...)"
+                  className="w-full h-32 p-3 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white resize-none"
+                />
+                <button
+                  onClick={handleSaveNote}
+                  disabled={isSavingNote}
+                  className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer focus:outline-none ${
+                    isSavingNote
+                      ? 'bg-slate-100 text-slate-400'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm hover:shadow'
+                  }`}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>{isSavingNote ? 'Guardando...' : 'Guardar Notas'}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* View Layout Canvas */}

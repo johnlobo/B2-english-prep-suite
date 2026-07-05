@@ -10,9 +10,13 @@ import {
   Bot,
   Flame,
   Award,
-  BookMarked
+  BookMarked,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
 
 // Import our custom sub-components
 import Auth from './components/Auth';
@@ -22,6 +26,7 @@ import SheetSync from './components/SheetSync';
 import AudioPlayer from './components/AudioPlayer';
 import AITutor from './components/AITutor';
 import ExamSimulation from './components/ExamSimulation';
+import UserManagement from './components/UserManagement';
 
 // Import Static Data
 import { DEFAULT_B2_DATA as b2Modules, getFullCombinedBank } from './data/b2Data';
@@ -29,7 +34,7 @@ import { UserProgress, Question, PodcastEpisode } from './types';
 
 export default function App() {
   // Authentication states
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
   const [progress, setProgress] = useState<UserProgress | null>(null);
   
   // Custom synced questions bank
@@ -44,22 +49,77 @@ export default function App() {
   // Active loaded podcast in persistent dock player
   const [activePodcastEpisode, setActivePodcastEpisode] = useState<PodcastEpisode | null>(null);
 
-  // Check client-side session on load
+  // Study streak state
+  const [streak, setStreak] = useState(0);
+
+  // Helper to calculate date difference in days
+  const getDateDiffInDays = (dateStr1: string, dateStr2: string): number => {
+    const d1 = new Date(dateStr1 + 'T00:00:00');
+    const d2 = new Date(dateStr2 + 'T00:00:00');
+    const diffTime = Math.abs(d2.getTime() - d1.getTime());
+    return Math.round(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const getLocalDateString = (): string => {
+    const localDate = new Date();
+    const offset = localDate.getTimezoneOffset();
+    const adjustedDate = new Date(localDate.getTime() - (offset * 60 * 1000));
+    return adjustedDate.toISOString().split('T')[0];
+  };
+
+  const checkAndResetStreakIfBroken = () => {
+    const today = getLocalDateString();
+    const savedLastDate = localStorage.getItem('b2_last_active_date');
+    const savedStreak = localStorage.getItem('b2_streak_count');
+    
+    if (savedLastDate && savedStreak) {
+      const diffDays = getDateDiffInDays(today, savedLastDate);
+      if (diffDays > 1) {
+        // Streak is broken because more than 1 day has passed without accessing
+        localStorage.setItem('b2_streak_count', '0');
+        setStreak(0);
+      } else {
+        setStreak(parseInt(savedStreak, 10));
+      }
+    } else {
+      setStreak(0);
+    }
+  };
+
+  const updateStreakOnAccess = () => {
+    const today = getLocalDateString();
+    const savedLastDate = localStorage.getItem('b2_last_active_date');
+    const savedStreak = localStorage.getItem('b2_streak_count');
+    
+    let currentStreak = savedStreak ? parseInt(savedStreak, 10) : 0;
+
+    if (!savedLastDate) {
+      currentStreak = 1;
+    } else if (savedLastDate === today) {
+      // Already accessed today, maintain current streak
+      if (currentStreak === 0) currentStreak = 1;
+    } else {
+      const diffDays = getDateDiffInDays(today, savedLastDate);
+      if (diffDays === 1) {
+        // Consecutive day!
+        currentStreak += 1;
+      } else {
+        // Streak broken/expired
+        currentStreak = 1;
+      }
+    }
+    
+    localStorage.setItem('b2_streak_count', String(currentStreak));
+    localStorage.setItem('b2_last_active_date', today);
+    setStreak(currentStreak);
+  };
+
+  // Check client-side session on load & listen to Firebase Auth changes
   useEffect(() => {
-    const savedUser = localStorage.getItem('b2_user');
-    const savedProgress = localStorage.getItem('b2_progress');
     const savedCustomQs = localStorage.getItem('b2_custom_qs');
     const savedSheetUrl = localStorage.getItem('b2_sheet_url');
     const savedSyncDate = localStorage.getItem('b2_sync_date');
 
-    if (savedUser && savedProgress) {
-      try {
-        setUser(JSON.parse(savedUser));
-        setProgress(JSON.parse(savedProgress));
-      } catch (e) {
-        localStorage.clear();
-      }
-    }
     if (savedCustomQs) {
       try {
         setCustomQuestions(JSON.parse(savedCustomQs));
@@ -67,11 +127,156 @@ export default function App() {
     }
     if (savedSheetUrl) setSheetUrl(savedSheetUrl);
     if (savedSyncDate) setLastSyncedAt(savedSyncDate);
+    
+    // Check and load study streak
+    checkAndResetStreakIfBroken();
+
+    // Firebase Auth session listener
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Fetch user profile from Firestore
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          let userData: any = null;
+          
+          try {
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              userData = userSnap.data();
+            } else {
+              userData = {
+                id: firebaseUser.uid,
+                name: firebaseUser.email === 'admin@b2mastery.es' ? 'Administrador' : (firebaseUser.displayName || 'Estudiante'),
+                email: firebaseUser.email || '',
+                role: firebaseUser.email === 'admin@b2mastery.es' ? 'admin' : 'user',
+                createdAt: new Date().toISOString()
+              };
+              await setDoc(userRef, userData);
+            }
+          } catch (firestoreErr) {
+            console.warn("Firestore fetch user failed, falling back to cached user state", firestoreErr);
+            const cachedUserStr = localStorage.getItem('b2_user');
+            if (cachedUserStr) {
+              userData = JSON.parse(cachedUserStr);
+            } else {
+              userData = {
+                id: firebaseUser.uid,
+                name: firebaseUser.email === 'admin@b2mastery.es' ? 'Administrador' : (firebaseUser.displayName || 'Estudiante'),
+                email: firebaseUser.email || '',
+                role: firebaseUser.email === 'admin@b2mastery.es' ? 'admin' : 'user',
+                createdAt: new Date().toISOString()
+              };
+            }
+          }
+
+          // Auto-repair and enforce password change check on session restoration
+          if (userData) {
+            const isAdminEmail = firebaseUser.email === 'admin@b2mastery.es';
+            let needsUpdate = false;
+            
+            if (isAdminEmail && userData.role !== 'admin') {
+              userData.role = 'admin';
+              needsUpdate = true;
+            }
+            if (isAdminEmail && userData.name === 'Estudiante') {
+              userData.name = 'Administrador';
+              needsUpdate = true;
+            }
+
+            // Check setup status
+            let isSetupComplete = false;
+            try {
+              const setupSnap = await getDoc(doc(db, 'system', 'setup'));
+              isSetupComplete = setupSnap.exists() ? !!setupSnap.data().adminSetupComplete : false;
+            } catch (e) {
+              isSetupComplete = false;
+            }
+
+            if (firebaseUser.email === 'admin@b2mastery.es' && !isSetupComplete && userData.mustChangePassword !== false) {
+              userData.mustChangePassword = true;
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              try {
+                await setDoc(userRef, userData, { merge: true });
+              } catch (setDocErr) {
+                console.warn("Failed to auto-repair user profile on Firebase (might be rules):", setDocErr);
+              }
+            }
+
+            // Force logout and prompt password change if mustChangePassword is active
+            if (userData.mustChangePassword === true) {
+              setUser(null);
+              setProgress(null);
+              localStorage.removeItem('b2_user');
+              localStorage.removeItem('b2_progress');
+              return;
+            }
+          }
+
+          // Fetch user progress from Firestore
+          const progressRef = doc(db, 'progress', firebaseUser.uid);
+          let progressData: any = null;
+
+          try {
+            const progressSnap = await getDoc(progressRef);
+            if (progressSnap.exists()) {
+              progressData = progressSnap.data();
+            } else {
+              progressData = {
+                userId: firebaseUser.uid,
+                completedTheory: [],
+                practiceAttempts: {},
+                examAttempts: []
+              };
+              await setDoc(progressRef, progressData);
+            }
+          } catch (firestoreErr) {
+            console.warn("Firestore fetch progress failed, falling back to cached progress state", firestoreErr);
+            const cachedProgressStr = localStorage.getItem('b2_progress');
+            if (cachedProgressStr) {
+              progressData = JSON.parse(cachedProgressStr);
+            } else {
+              progressData = {
+                userId: firebaseUser.uid,
+                completedTheory: [],
+                practiceAttempts: {},
+                examAttempts: []
+              };
+            }
+          }
+
+          setUser(userData);
+          setProgress(progressData);
+          localStorage.setItem('b2_user', JSON.stringify(userData));
+          localStorage.setItem('b2_progress', JSON.stringify(progressData));
+        } catch (err) {
+          console.error("Error fetching Firebase user session data:", err);
+        }
+      } else {
+        setUser(null);
+        setProgress(null);
+        localStorage.removeItem('b2_user');
+        localStorage.removeItem('b2_progress');
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  // Track study module accesses to calculate/increment streak
+  useEffect(() => {
+    if (activeTab === 'modules') {
+      updateStreakOnAccess();
+    } else {
+      checkAndResetStreakIfBroken();
+    }
+  }, [activeTab]);
 
   // Sync state helpers
   const handleAuthSuccess = (
-    authenticatedUser: { id: string; name: string; email: string },
+    authenticatedUser: { id: string; name: string; email: string; role?: string },
     userProgress: any
   ) => {
     setUser(authenticatedUser);
@@ -87,19 +292,20 @@ export default function App() {
     setProgress(newProgress);
     localStorage.setItem('b2_progress', JSON.stringify(newProgress));
 
-    // Send update to Express server backend to persist on db file
+    // Save directly to Firestore progress collection
     try {
-      await fetch(`/api/progress/${user.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProgress),
-      });
+      await setDoc(doc(db, 'progress', user.id), newProgress, { merge: true });
     } catch (err) {
-      console.error('Failed to sync progress with the server', err);
+      console.error('Failed to sync progress with Firebase Firestore', err);
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error('Failed to sign out from Firebase Auth', err);
+    }
     setUser(null);
     setProgress(null);
     localStorage.removeItem('b2_user');
@@ -133,6 +339,45 @@ export default function App() {
     return [...defaultQs, ...customQuestions];
   };
 
+  // Dynamically merge sheet questions into the modules structure
+  const dynamicModules = React.useMemo(() => {
+    // Deep clone to avoid mutating the static dataset directly
+    const cloned = JSON.parse(JSON.stringify(b2Modules)) as typeof b2Modules;
+    
+    customQuestions.forEach((q) => {
+      const mIdx = q.moduleIndex;
+      const dIdx = q.dayIndex;
+      
+      if (mIdx !== undefined && mIdx >= 0 && mIdx < cloned.length) {
+        const targetModule = cloned[mIdx];
+        
+        if (dIdx !== undefined && dIdx >= 0 && dIdx < targetModule.days.length) {
+          const targetDay = targetModule.days[dIdx];
+          
+          // Avoid duplicate entries
+          const alreadyExists = targetDay.practiceQuestions.some(
+            (existingQ) => existingQ.id === q.id || existingQ.question.trim().toLowerCase() === q.question.trim().toLowerCase()
+          );
+          
+          if (!alreadyExists) {
+            targetDay.practiceQuestions.push(q);
+          }
+        } else {
+          // If no day index is specified or out of bounds, treat as control exam question
+          const alreadyExists = targetModule.controlExam.some(
+            (existingQ) => existingQ.id === q.id || existingQ.question.trim().toLowerCase() === q.question.trim().toLowerCase()
+          );
+          
+          if (!alreadyExists) {
+            targetModule.controlExam.push(q);
+          }
+        }
+      }
+    });
+    
+    return cloned;
+  }, [customQuestions]);
+
   // Persistent continuous Podcast Episode loader callback
   const handleLoadPodcastEpisode = (episode: PodcastEpisode) => {
     setActivePodcastEpisode(episode);
@@ -144,11 +389,11 @@ export default function App() {
   }
 
   // Podcast collection of all modules
-  const allPodcasts = b2Modules.flatMap((m) => m.podcastEpisodes);
+  const allPodcasts = dynamicModules.flatMap((m) => m.podcastEpisodes);
 
   // Calculate global progress
   const completedTheoryCount = progress.completedTheory.length;
-  const totalTheoryCount = b2Modules.reduce((acc, m) => acc + m.days.length, 0);
+  const totalTheoryCount = dynamicModules.reduce((acc, m) => acc + m.days.length, 0);
   const theoryPercentage = totalTheoryCount > 0 ? Math.round((completedTheoryCount / totalTheoryCount) * 100) : 0;
 
   return (
@@ -170,6 +415,13 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4 sm:gap-8">
+          {streak > 0 && (
+            <div className="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 py-1.5 px-3 rounded-xl text-xs font-bold animate-pulse">
+              <Flame className="w-4 h-4 fill-amber-500 text-amber-500" />
+              <span>{streak} {streak === 1 ? 'Día' : 'Días'}</span>
+            </div>
+          )}
+
           <div className="hidden md:flex flex-col items-end gap-1">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Global Progress</div>
             <div className="flex items-center gap-2">
@@ -255,18 +507,30 @@ export default function App() {
             </button>
           </div>
 
-          <div className="space-y-2 pt-4 border-t border-slate-100">
-            <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pl-3">Datos</h3>
-            <button
-              onClick={() => setActiveTab('sheets')}
-              className={`w-full flex items-center space-x-3 py-3 px-4 rounded-xl text-left text-sm font-semibold transition-all focus:outline-none cursor-pointer ${
-                activeTab === 'sheets' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              <Database className="w-5 h-5" />
-              <span>Sincronizar Sheets</span>
-            </button>
-          </div>
+          {user && user.role === 'admin' && (
+            <div className="space-y-2 pt-4 border-t border-slate-100">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pl-3">Administración</h3>
+              <button
+                onClick={() => setActiveTab('usuarios')}
+                className={`w-full flex items-center space-x-3 py-3 px-4 rounded-xl text-left text-sm font-semibold transition-all focus:outline-none cursor-pointer ${
+                  activeTab === 'usuarios' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Users className="w-5 h-5" />
+                <span>Gestión Usuarios</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('sheets')}
+                className={`w-full flex items-center space-x-3 py-3 px-4 rounded-xl text-left text-sm font-semibold transition-all focus:outline-none cursor-pointer ${
+                  activeTab === 'sheets' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Database className="w-5 h-5" />
+                <span>Sincronizar Sheets</span>
+              </button>
+            </div>
+          )}
         </nav>
 
         {/* Dynamic Content View Area */}
@@ -282,7 +546,7 @@ export default function App() {
                 <Dashboard
                   user={user}
                   progress={progress}
-                  modules={b2Modules}
+                  modules={dynamicModules}
                   onSelectTab={(tab, moduleIdx) => {
                     setActiveTab(tab);
                     if (moduleIdx !== undefined) {
@@ -290,6 +554,7 @@ export default function App() {
                     }
                   }}
                   onStartSimulation={() => setActiveTab('simulacion')}
+                  streak={streak}
                 />
               </motion.div>
             )}
@@ -302,7 +567,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
               >
                 <ModuleSection
-                  modules={b2Modules}
+                  modules={dynamicModules}
                   selectedModuleIndex={selectedModuleIndex}
                   onSelectModule={setSelectedModuleIndex}
                   progress={progress}
@@ -334,7 +599,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'sheets' && (
+            {activeTab === 'sheets' && user && user.role === 'admin' && (
               <motion.div
                 key="sheets"
                 initial={{ opacity: 0 }}
@@ -349,6 +614,17 @@ export default function App() {
                   onClearSync={handleClearSync}
                   customQuestionsCount={customQuestions.length}
                 />
+              </motion.div>
+            )}
+
+            {activeTab === 'usuarios' && user && user.role === 'admin' && (
+              <motion.div
+                key="usuarios"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <UserManagement currentUserId={user.id} />
               </motion.div>
             )}
 
@@ -436,15 +712,29 @@ export default function App() {
           <span className="text-[9px] font-medium mt-0.5">Audio</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('sheets')}
-          className={`flex flex-col items-center justify-center w-12 h-12 rounded-xl focus:outline-none ${
-            activeTab === 'sheets' ? 'text-indigo-600' : 'text-slate-400'
-          }`}
-        >
-          <Database className="w-5 h-5" />
-          <span className="text-[9px] font-medium mt-0.5">Sheets</span>
-        </button>
+        {user && user.role === 'admin' && (
+          <>
+            <button
+              onClick={() => setActiveTab('sheets')}
+              className={`flex flex-col items-center justify-center w-12 h-12 rounded-xl focus:outline-none ${
+                activeTab === 'sheets' ? 'text-indigo-600' : 'text-slate-400'
+              }`}
+            >
+              <Database className="w-5 h-5" />
+              <span className="text-[9px] font-medium mt-0.5">Sheets</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('usuarios')}
+              className={`flex flex-col items-center justify-center w-12 h-12 rounded-xl focus:outline-none ${
+                activeTab === 'usuarios' ? 'text-indigo-600' : 'text-slate-400'
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              <span className="text-[9px] font-medium mt-0.5">Usuarios</span>
+            </button>
+          </>
+        )}
       </nav>
     </div>
   );

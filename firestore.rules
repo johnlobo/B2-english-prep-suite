@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'admin@b2mastery.es';
+    }
+
+    // Rules for system setup
+    match /system/{documentId} {
+      allow read: if true;
+      allow write: if isAdmin() || !exists(/databases/$(database)/documents/system/setup);
+    }
+
+    // Rules for users
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow write: if isSignedIn() && (isOwner(userId) || isAdmin());
+    }
+
+    // Rules for progress
+    match /progress/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow write: if isSignedIn() && (isOwner(userId) || isAdmin());
+    }
+
+    // Rules for notes
+    match /notes/{noteId} {
+      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
+      allow write: if isSignedIn() && (request.resource == null || request.resource.data.userId == request.auth.uid);
+    }
+  }
+}

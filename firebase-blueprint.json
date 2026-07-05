@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile containing name, email, and system authorization role.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier matching Firebase Auth UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the user."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the user."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "admin"],
+          "description": "System role of the user determining access level."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user was created."
+        }
+      },
+      "required": ["id", "name", "email", "role", "createdAt"]
+    },
+    "Progress": {
+      "title": "Progress",
+      "description": "User's study progress tracking completed theory days and exam/practice attempts.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Reference to the user profile."
+        },
+        "completedTheory": {
+          "type": "array",
+          "description": "List of completed module/day IDs."
+        },
+        "practiceAttempts": {
+          "type": "object",
+          "description": "Map of completed practice attempt records by day."
+        },
+        "examAttempts": {
+          "type": "array",
+          "description": "History of exam attempts."
+        }
+      },
+      "required": ["userId", "completedTheory", "practiceAttempts", "examAttempts"]
+    },
+    "Note": {
+      "title": "Note",
+      "description": "User study notes per module.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The user owning this study note."
+        },
+        "moduleId": {
+          "type": "string",
+          "description": "The ID of the module (e.g. M0, M1)."
+        },
+        "content": {
+          "type": "string",
+          "description": "The custom plain text notes."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the note was last modified."
+        }
+      },
+      "required": ["userId", "moduleId", "content", "updatedAt"]
+    },
+    "SystemSetup": {
+      "title": "SystemSetup",
+      "description": "Global system configuration and setup status.",
+      "type": "object",
+      "properties": {
+        "adminSetupComplete": {
+          "type": "boolean",
+          "description": "Whether the initial admin user has updated their temporary password."
+        }
+      },
+      "required": ["adminSetupComplete"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user profiles indexed by Firebase Auth UID."
+    },
+    "/progress/{userId}": {
+      "schema": "Progress",
+      "description": "User progress data, indexed by User ID."
+    },
+    "/notes/{noteId}": {
+      "schema": "Note",
+      "description": "User personal study notes per module, indexed by note ID."
+    },
+    "/system/{documentId}": {
+      "schema": "SystemSetup",
+      "description": "System-wide parameters and global configuration documents."
+    }
+  }
+}

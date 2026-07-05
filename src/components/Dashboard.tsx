@@ -1,5 +1,5 @@
-import React from 'react';
-import { Award, CheckCircle, TrendingUp, Sparkles, BookOpen, Clock, Calendar, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { Award, CheckCircle, TrendingUp, Sparkles, BookOpen, Clock, Calendar, AlertCircle, Flame, Trophy, Percent, FolderOpen, Layers } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { motion } from 'motion/react';
 import { UserProgress, ModuleData } from '../types';
@@ -10,9 +10,12 @@ interface DashboardProps {
   modules: ModuleData[];
   onSelectTab: (tab: string, moduleIndex?: number) => void;
   onStartSimulation: () => void;
+  streak: number;
 }
 
-export default function Dashboard({ user, progress, modules, onSelectTab, onStartSimulation }: DashboardProps) {
+export default function Dashboard({ user, progress, modules, onSelectTab, onStartSimulation, streak }: DashboardProps) {
+  const [activeCategory, setActiveCategory] = useState<'all' | 'general' | 'milestones' | 'modules'>('all');
+
   // Compute progress stats
   const completedTheoryCount = progress.completedTheory.length;
   const totalTheoryCount = modules.reduce((acc, m) => acc + m.days.length, 0);
@@ -27,19 +30,112 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
   const avgSimulationScore = simulations.length > 0 
     ? Math.round(simulations.reduce((acc, s) => acc + s.score, 0) / simulations.length) 
     : 0;
-
-  // Streak logic
-  const streak = 3; // Mock active daily streak
   
-  // Badges Earned
+  // Badges Earned - Configured and enriched with Milestones and Module Completion rewards
   const badges = [
-    { id: 'b1', name: 'Primeros Pasos', desc: 'Completaste tu primera teoría B2', earned: progress.completedTheory.length > 0, icon: '🌱' },
-    { id: 'b2', name: 'Práctica Constante', desc: 'Completaste 3 prácticas diarias', earned: totalPracticeCount >= 3, icon: '🔥' },
-    { id: 'b3', name: 'Control de Módulo', desc: 'Aprobaste un examen de control', earned: examAttempts.some(e => e.type === 'module' && e.score >= 80), icon: '🏆' },
-    { id: 'b4', name: 'Simulador B2', desc: 'Lograste >80% en simulacro completo', earned: simulations.some(e => e.score >= 80), icon: '🎓' },
+    // Generales
+    { 
+      id: 'b1', 
+      name: 'Primeros Pasos', 
+      desc: 'Completaste tu primera teoría B2', 
+      earned: progress.completedTheory.length > 0, 
+      icon: '🌱', 
+      category: 'general' as const,
+      hint: 'Completa al menos una lección teórica'
+    },
+    { 
+      id: 'b2', 
+      name: 'Práctica Constante', 
+      desc: 'Completaste 3 prácticas diarias', 
+      earned: totalPracticeCount >= 3, 
+      icon: '🔥', 
+      category: 'general' as const,
+      hint: `Progreso: ${totalPracticeCount}/3 prácticas`
+    },
+    { 
+      id: 'b3', 
+      name: 'Control de Módulo', 
+      desc: 'Aprobaste un examen de control con ≥80%', 
+      earned: examAttempts.some(e => e.type === 'module' && e.score >= 80), 
+      icon: '🏆', 
+      category: 'general' as const,
+      hint: 'Logra un 80% en cualquier test de control'
+    },
+    { 
+      id: 'b4', 
+      name: 'Simulador B2', 
+      desc: 'Lograste ≥80% en simulacro completo', 
+      earned: simulations.some(e => e.score >= 80), 
+      icon: '🎓', 
+      category: 'general' as const,
+      hint: 'Logra un 80% en el simulacro de examen'
+    },
+    
+    // Metas de Porcentaje
+    { 
+      id: 'm25', 
+      name: 'Iniciado B2', 
+      desc: 'Alcanzaste el 25% del temario teórico', 
+      earned: theoryPercentage >= 25, 
+      icon: '⚡', 
+      category: 'milestones' as const,
+      hint: `Progreso: ${theoryPercentage}% / 25%`
+    },
+    { 
+      id: 'm50', 
+      name: 'Mitad del Camino', 
+      desc: 'Alcanzaste el 50% del temario teórico', 
+      earned: theoryPercentage >= 50, 
+      icon: '🎯', 
+      category: 'milestones' as const,
+      hint: `Progreso: ${theoryPercentage}% / 50%`
+    },
+    { 
+      id: 'm75', 
+      name: 'Avanzado Cambridge', 
+      desc: 'Alcanzaste el 75% del temario teórico', 
+      earned: theoryPercentage >= 75, 
+      icon: '🚀', 
+      category: 'milestones' as const,
+      hint: `Progreso: ${theoryPercentage}% / 75%`
+    },
+    { 
+      id: 'm100', 
+      name: 'Candidato Perfecto', 
+      desc: 'Completaste el 100% del temario teórico', 
+      earned: theoryPercentage >= 100, 
+      icon: '👑', 
+      category: 'milestones' as const,
+      hint: `Progreso: ${theoryPercentage}% / 100%`
+    },
+
+    // Módulos Completados
+    ...modules.map((mod) => {
+      const modTheoryCount = mod.days.length;
+      const completedInMod = progress.completedTheory.filter(t => t.startsWith(`M${mod.index}`)).length;
+      const isCompleted = modTheoryCount > 0 && completedInMod === modTheoryCount;
+      const moduleBadgeIcons = ['📝', '🔄', '🔮', '📚'];
+      const moduleBadgeNames = [
+        'Maestro de Narrativa',
+        'Experto en Condicionales',
+        'Estratega de Estructuras',
+        'Señor de Phrasal Verbs'
+      ];
+      return {
+        id: `mod-${mod.index}`,
+        name: moduleBadgeNames[mod.index] || `Módulo ${mod.index + 1} Superado`,
+        desc: `Completaste toda la teoría del Módulo ${mod.index + 1}`,
+        earned: isCompleted,
+        icon: moduleBadgeIcons[mod.index] || '🎖️',
+        category: 'modules' as const,
+        hint: `Progreso: ${completedInMod}/${modTheoryCount} lecciones`
+      };
+    })
   ];
 
-  const earnedBadges = badges.filter(b => b.earned);
+  const earnedBadgesCount = badges.filter(b => b.earned).length;
+  const totalBadgesCount = badges.length;
+  const badgesEarnedPercentage = totalBadgesCount > 0 ? Math.round((earnedBadgesCount / totalBadgesCount) * 100) : 0;
 
   // Prepare chart data
   const chartData = simulations.map((attempt, index) => ({
@@ -53,9 +149,22 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
       {/* Welcome Banner / Simulation Premium Card */}
       <div className="bg-indigo-900 text-white rounded-3xl p-6 sm:p-8 relative overflow-hidden shadow-xl border border-slate-200/10">
         <div className="relative z-10 max-w-2xl space-y-4">
-          <div className="inline-flex items-center space-x-1.5 bg-white/10 text-indigo-200 text-[10px] sm:text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full border border-white/5">
-            <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-            <span>Camino al B2 First de Cambridge</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center space-x-1.5 bg-white/10 text-indigo-200 text-[10px] sm:text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full border border-white/5">
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              <span>Camino al B2 First de Cambridge</span>
+            </div>
+            {streak > 0 ? (
+              <div className="inline-flex items-center space-x-1.5 bg-amber-500/20 text-amber-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full border border-amber-500/30">
+                <Flame className="w-3.5 h-3.5 fill-amber-500 text-amber-500 animate-pulse" />
+                <span>Racha: {streak} {streak === 1 ? 'Día' : 'Días'} 🔥</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center space-x-1.5 bg-white/5 text-slate-300 text-[10px] sm:text-xs font-bold uppercase tracking-wider py-1 px-3 rounded-full border border-white/5">
+                <Flame className="w-3.5 h-3.5 text-slate-400" />
+                <span>Sin racha activa. ¡Visita un módulo!</span>
+              </div>
+            )}
           </div>
           <h2 className="text-2xl sm:text-4xl font-extrabold tracking-tight font-display">
             ¡Hola de nuevo, {user.name}!
@@ -166,28 +275,122 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
           </div>
 
           {/* Badges Section */}
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Tus Logros y Medallas</h3>
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
+                  <Award className="w-4 h-4 text-indigo-500" />
+                  <span>Tus Logros y Medallas</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Desbloquea medallas oficiales al progresar en la teoría y simulacros.
+                </p>
+              </div>
+              <div className="bg-indigo-50 px-3.5 py-1.5 rounded-2xl flex items-center space-x-2 border border-indigo-100 self-start sm:self-auto">
+                <Trophy className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-bold text-indigo-950">
+                  {earnedBadgesCount} / {totalBadgesCount} ({badgesEarnedPercentage}%)
+                </span>
+              </div>
+            </div>
+
+            {/* Progress bar for achievements */}
+            <div className="relative h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div style={{ width: `${badgesEarnedPercentage}%` }} className="absolute top-0 left-0 bottom-0 bg-indigo-600 transition-all duration-500" />
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setActiveCategory('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 border cursor-pointer ${
+                  activeCategory === 'all'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Todos</span>
+              </button>
+              <button
+                onClick={() => setActiveCategory('general')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 border cursor-pointer ${
+                  activeCategory === 'general'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>Generales</span>
+              </button>
+              <button
+                onClick={() => setActiveCategory('milestones')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 border cursor-pointer ${
+                  activeCategory === 'milestones'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <Percent className="w-3.5 h-3.5" />
+                <span>Metas %</span>
+              </button>
+              <button
+                onClick={() => setActiveCategory('modules')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1 border cursor-pointer ${
+                  activeCategory === 'modules'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                <span>Módulos</span>
+              </button>
+            </div>
+
+            {/* Badges Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {badges.map((badge) => (
-                <div
-                  key={badge.id}
-                  className={`p-4 rounded-2xl border text-center transition-all ${
-                    badge.earned
-                      ? 'bg-indigo-50/50 border-indigo-100'
-                      : 'bg-slate-50/50 border-slate-100 opacity-60'
-                  }`}
-                >
-                  <span className="text-3xl block mb-2">{badge.icon}</span>
-                  <h4 className="font-bold text-xs text-slate-900 font-display">{badge.name}</h4>
-                  <p className="text-[10px] text-slate-500 mt-1 leading-tight">{badge.desc}</p>
-                  {badge.earned ? (
-                    <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full mt-2 inline-block">Ganado</span>
-                  ) : (
-                    <span className="text-[9px] font-bold text-slate-400 bg-slate-200/60 px-2 py-0.5 rounded-full mt-2 inline-block">Bloqueado</span>
-                  )}
-                </div>
-              ))}
+              {badges
+                .filter(b => activeCategory === 'all' || b.category === activeCategory)
+                .map((badge) => (
+                  <motion.div
+                    key={badge.id}
+                    whileHover={{ scale: 1.03, y: -2 }}
+                    className={`p-4 rounded-2xl border text-center transition-all flex flex-col justify-between ${
+                      badge.earned
+                        ? 'bg-gradient-to-br from-indigo-50/70 to-white border-indigo-100 shadow-sm'
+                        : 'bg-slate-50/50 border-slate-100/80 opacity-60'
+                    }`}
+                  >
+                    <div>
+                      <div className="relative inline-block">
+                        <span className={`text-4xl block mb-2 filter transition-all ${badge.earned ? 'drop-shadow-md' : 'grayscale brightness-75'}`}>
+                          {badge.icon}
+                        </span>
+                        {!badge.earned && (
+                          <span className="absolute -bottom-1 -right-1 bg-slate-200 text-slate-500 rounded-full p-0.5 text-[8px] border border-white">
+                            🔒
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-bold text-xs text-slate-900 font-display mt-1">{badge.name}</h4>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-tight min-h-[32px] flex items-center justify-center">
+                        {badge.desc}
+                      </p>
+                    </div>
+
+                    <div className="mt-3">
+                      {badge.earned ? (
+                        <span className="text-[9px] font-bold text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-full inline-block">
+                          ✨ Ganado
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-medium text-slate-500 bg-slate-100/90 px-2 py-0.5 rounded-full inline-block truncate max-w-full" title={badge.hint}>
+                          {badge.hint}
+                        </span>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
             </div>
           </div>
         </div>
