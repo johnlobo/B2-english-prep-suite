@@ -401,9 +401,7 @@ export default function App() {
       {/* Bento Grid Header */}
       <header className="sticky top-0 z-40 h-20 bg-white border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-xl italic shadow-sm shadow-indigo-200">
-            B2
-          </div>
+          <img src="/favicon.png" alt="B2 English Prep Suite" className="w-10 h-10 rounded-lg shadow-sm shadow-indigo-200" />
           <div>
             <h1 className="font-bold text-sm sm:text-lg leading-tight font-display text-slate-900">
               Exam Master: Cambridge English

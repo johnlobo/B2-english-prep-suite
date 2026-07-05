@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, KeyRound, Mail, Sparkles, User, Award, CheckCircle } from 'lucide-react';
+import { KeyRound, Mail, Sparkles, User, Award, CheckCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, limit, getDocs } from 'firebase/firestore';
@@ -335,14 +335,9 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.5 }}
-          className="flex items-center justify-center space-x-2 mx-auto"
+          className="flex items-center justify-center mx-auto"
         >
-          <div className="bg-indigo-600 text-white p-3 rounded-2xl shadow-lg shadow-indigo-200">
-            <BookOpen className="w-8 h-8" />
-          </div>
-          <span className="text-2xl font-bold tracking-tight text-slate-900 font-display">
-            B2 English <span className="text-indigo-600">Mastery</span>
-          </span>
+          <img src="/logo.png" alt="B2 English Prep Suite" className="h-24 sm:h-28 w-auto" />
         </motion.div>
         <h2 className="mt-6 text-3xl font-extrabold text-slate-900 font-display">
           {showChangePasswordForm ? 'Actualizar Contraseña' : 'Inicia sesión en tu cuenta'}
