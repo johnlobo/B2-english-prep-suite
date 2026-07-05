@@ -443,6 +443,7 @@ export const DEFAULT_B2_DATA: ModuleData[] = [
     podcastEpisodes: [
       {
         id: "p1_1",
+        audioStoragePath: "El_Marco_Gramatical_B2.mp4",
         title: "Episodio 1: El Marco Gramatical B2 y el Gran Error",
         duration: "4:15",
         description: "Análisis sobre por qué no debes confiar únicamente en la intuición o en el 'me suena bien' para aprobar el examen tipo test de B2.",
@@ -454,6 +455,7 @@ export const DEFAULT_B2_DATA: ModuleData[] = [
       },
       {
         id: "p1_2",
+        audioStoragePath: "Lógica_matemática_para_los_verbos_B2.m4a",
         title: "Episodio 2: El Enigma de 'Used to' y 'Would'",
         duration: "3:40",
         description: "Explicación detallada con trucos de examen para distinguir 'Used to', 'Would' y 'Be/Get used to' sin equivocarte.",
@@ -1025,6 +1027,7 @@ export const DEFAULT_B2_DATA: ModuleData[] = [
     podcastEpisodes: [
       {
         id: "p2_1",
+        audioStoragePath: "Domina_la_lógica_del_inglés_avanzado.m4a",
         title: "Episodio 3: La Anatomía de la Trampa de 'Since'",
         duration: "3:55",
         description: "Explicación magistral sobre cómo resolver los reactivos con condicionales y marcadores sintácticos de concesión.",
@@ -1599,6 +1602,7 @@ export const DEFAULT_B2_DATA: ModuleData[] = [
     podcastEpisodes: [
       {
         id: "p3_1",
+        audioStoragePath: "Claves_de_modales_y_pasivas_para_B2.m4a",
         title: "Episodio 4: Los Modales de Deducción Pasada",
         duration: "4:02",
         description: "Trucos para no fallar las especulaciones sobre el pasado y las estructuras causativas.",
@@ -2111,6 +2115,7 @@ export const DEFAULT_B2_DATA: ModuleData[] = [
     podcastEpisodes: [
       {
         id: "p4_1",
+        audioStoragePath: "Cómo_esquivar_las_trampas_del_examen_B2.m4a",
         title: "Episodio 5: Phrasal Verbs, Falsos Amigos y Descarte Veloz",
         duration: "3:48",
         description: "Consejos clave para resolver la sección léxica del test mediante dependent prepositions sin perder tiempo.",

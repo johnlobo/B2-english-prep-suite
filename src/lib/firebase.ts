@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 export const firebaseConfig = {
   apiKey: "AIzaSyDpFIxjyF-_lsqtqMN3XJEUtUZBM65cdFc",
@@ -17,6 +18,8 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 export const auth = getAuth(app);
+
+export const storage = getStorage(app);
 
 // Validate Connection to Firestore on startup
 import { doc, getDocFromServer } from 'firebase/firestore';

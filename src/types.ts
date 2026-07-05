@@ -61,7 +61,8 @@ export interface PodcastEpisode {
   title: string;
   duration: string;
   description: string;
-  audioUrl?: string;
+  /** Object path (not a URL) inside the Firebase Storage bucket, e.g. "El_Marco_Gramatical_B2.mp4" */
+  audioStoragePath?: string;
   transcript: { speaker: string; text: string }[];
 }
 
