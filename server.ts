@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import * as XLSX from 'xlsx';
@@ -8,315 +7,11 @@ import { DEFAULT_B2_DATA } from './src/data/b2Data';
 
 const app = express();
 const PORT = 3000;
-const DB_FILE = path.join(process.cwd(), 'b2_database.json');
 
 app.use(express.json());
 
-// Initialize Local JSON Database
-interface DatabaseSchema {
-  users: { [id: string]: { id: string; email: string; name: string; passwordHash: string; role?: string; createdAt: string } };
-  progress: { [userId: string]: any };
-}
-
-function readDb(): DatabaseSchema {
-  let db: DatabaseSchema;
-  if (!fs.existsSync(DB_FILE)) {
-    db = { users: {}, progress: {} };
-  } else {
-    try {
-      const data = fs.readFileSync(DB_FILE, 'utf-8');
-      db = JSON.parse(data);
-    } catch (e) {
-      console.error('Error reading database file, resetting', e);
-      db = { users: {}, progress: {} };
-    }
-  }
-
-  // Ensure default admin user exists
-  const hasAdmin = Object.values(db.users).some(u => u.email === 'admin' || u.role === 'admin');
-  if (!hasAdmin) {
-    const adminId = 'user_admin';
-    db.users[adminId] = {
-      id: adminId,
-      name: 'Administrador',
-      email: 'admin',
-      passwordHash: 'admin',
-      role: 'admin',
-      createdAt: new Date().toISOString()
-    };
-    db.progress[adminId] = {
-      userId: adminId,
-      completedTheory: [],
-      practiceAttempts: {},
-      examAttempts: []
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-  } else {
-    // Ensure all existing users have a role, default to 'user' or 'admin' for the 'admin' account
-    let updated = false;
-    Object.values(db.users).forEach(u => {
-      if (!u.role) {
-        u.role = u.email === 'admin' ? 'admin' : 'user';
-        updated = true;
-      }
-    });
-    if (updated) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-    }
-  }
-
-  return db;
-}
-
-function writeDb(db: DatabaseSchema) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
-
 // ----------------------------------------------------
-// 1. Authentication Endpoints
-// ----------------------------------------------------
-app.post('/api/auth/register', (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios' });
-  }
-
-  const db = readDb();
-  const normalizedEmail = email.toLowerCase().trim();
-
-  // Check if user already exists
-  const existingUser = Object.values(db.users).find(u => u.email === normalizedEmail);
-  if (existingUser) {
-    return res.status(400).json({ error: 'El correo electrónico ya está registrado' });
-  }
-
-  const userId = 'user_' + Math.random().toString(36).substr(2, 9);
-  const newUser = {
-    id: userId,
-    name: name.trim(),
-    email: normalizedEmail,
-    passwordHash: password, // Simple plain text for this environment (mock/test app)
-    role: 'user',
-    createdAt: new Date().toISOString()
-  };
-
-  db.users[userId] = newUser;
-  db.progress[userId] = {
-    userId,
-    completedTheory: [],
-    practiceAttempts: {},
-    examAttempts: []
-  };
-
-  writeDb(db);
-
-  res.json({
-    user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role },
-    progress: db.progress[userId]
-  });
-});
-
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Faltan credenciales' });
-  }
-
-  const db = readDb();
-  const normalizedEmail = email.toLowerCase().trim();
-
-  const user = Object.values(db.users).find(u => u.email === normalizedEmail && u.passwordHash === password);
-  if (!user) {
-    return res.status(401).json({ error: 'Credenciales incorrectas o usuario inexistente' });
-  }
-
-  // Find or create progress
-  if (!db.progress[user.id]) {
-    db.progress[user.id] = {
-      userId: user.id,
-      completedTheory: [],
-      practiceAttempts: {},
-      examAttempts: []
-    };
-    writeDb(db);
-  }
-
-  res.json({
-    user: { id: user.id, name: user.name, email: user.email, role: user.role || 'user' },
-    progress: db.progress[user.id]
-  });
-});
-
-// ----------------------------------------------------
-// 2. User Progress Endpoints
-// ----------------------------------------------------
-app.get('/api/progress/:userId', (req, res) => {
-  const { userId } = req.params;
-  const db = readDb();
-  const progress = db.progress[userId];
-  if (!progress) {
-    return res.status(404).json({ error: 'Progreso no encontrado' });
-  }
-  res.json(progress);
-});
-
-app.post('/api/progress/:userId', (req, res) => {
-  const { userId } = req.params;
-  const updatedProgress = req.body;
-  if (!updatedProgress) {
-    return res.status(400).json({ error: 'Progreso inválido' });
-  }
-
-  const db = readDb();
-  db.progress[userId] = {
-    ...db.progress[userId],
-    ...updatedProgress,
-    userId // preserve the correct ID
-  };
-  writeDb(db);
-
-  res.json({ success: true, progress: db.progress[userId] });
-});
-
-// Helper to verify admin identity
-function isAdmin(req: express.Request): boolean {
-  const userId = req.headers['x-user-id'] as string;
-  if (!userId) return false;
-  const db = readDb();
-  const user = db.users[userId];
-  return user && user.role === 'admin';
-}
-
-// ----------------------------------------------------
-// 2.5. Admin User Management Endpoints
-// ----------------------------------------------------
-app.get('/api/admin/users', (req, res) => {
-  if (!isAdmin(req)) {
-    return res.status(403).json({ error: 'Acceso denegado: Se requieren permisos de administrador' });
-  }
-
-  const db = readDb();
-  const userList = Object.values(db.users).map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role || 'user',
-    passwordHash: u.passwordHash,
-    createdAt: u.createdAt
-  }));
-
-  res.json(userList);
-});
-
-app.post('/api/admin/users', (req, res) => {
-  if (!isAdmin(req)) {
-    return res.status(403).json({ error: 'Acceso denegado: Se requieren permisos de administrador' });
-  }
-
-  const { name, email, password, role } = req.body;
-  if (!name || !email || !password || !role) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios' });
-  }
-
-  const db = readDb();
-  const normalizedEmail = email.toLowerCase().trim();
-
-  const existingUser = Object.values(db.users).find(u => u.email === normalizedEmail);
-  if (existingUser) {
-    return res.status(400).json({ error: 'El correo electrónico ya está registrado' });
-  }
-
-  const userId = 'user_' + Math.random().toString(36).substr(2, 9);
-  const newUser = {
-    id: userId,
-    name: name.trim(),
-    email: normalizedEmail,
-    passwordHash: password,
-    role: role,
-    createdAt: new Date().toISOString()
-  };
-
-  db.users[userId] = newUser;
-  db.progress[userId] = {
-    userId,
-    completedTheory: [],
-    practiceAttempts: {},
-    examAttempts: []
-  };
-
-  writeDb(db);
-
-  res.json({ success: true, user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role } });
-});
-
-app.put('/api/admin/users/:userId', (req, res) => {
-  if (!isAdmin(req)) {
-    return res.status(403).json({ error: 'Acceso denegado: Se requieren permisos de administrador' });
-  }
-
-  const { userId } = req.params;
-  const { name, email, password, role } = req.body;
-
-  const db = readDb();
-  const user = db.users[userId];
-  if (!user) {
-    return res.status(404).json({ error: 'Usuario no encontrado' });
-  }
-
-  if (email) {
-    const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = Object.values(db.users).find(u => u.email === normalizedEmail && u.id !== userId);
-    if (existingUser) {
-      return res.status(400).json({ error: 'El correo electrónico ya está registrado por otro usuario' });
-    }
-    user.email = normalizedEmail;
-  }
-
-  if (name) user.name = name.trim();
-  if (password) user.passwordHash = password;
-  if (role) {
-    // If we're updating the requesting user's own role from admin to user, prevent lock-out unless there is another admin
-    if (userId === req.headers['x-user-id'] && role !== 'admin') {
-      const otherAdmin = Object.values(db.users).some(u => u.id !== userId && u.role === 'admin');
-      if (!otherAdmin) {
-        return res.status(400).json({ error: 'No puedes cambiar tu propio rol porque eres el único administrador' });
-      }
-    }
-    user.role = role;
-  }
-
-  writeDb(db);
-
-  res.json({ success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
-});
-
-app.delete('/api/admin/users/:userId', (req, res) => {
-  if (!isAdmin(req)) {
-    return res.status(403).json({ error: 'Acceso denegado: Se requieren permisos de administrador' });
-  }
-
-  const { userId } = req.params;
-  if (userId === req.headers['x-user-id']) {
-    return res.status(400).json({ error: 'No puedes eliminar tu propio usuario administrador' });
-  }
-
-  const db = readDb();
-  if (!db.users[userId]) {
-    return res.status(404).json({ error: 'Usuario no encontrado' });
-  }
-
-  delete db.users[userId];
-  if (db.progress[userId]) {
-    delete db.progress[userId];
-  }
-
-  writeDb(db);
-
-  res.json({ success: true });
-});
-
-// ----------------------------------------------------
-// 3. AI Tutor Explanation (Gemini API)
+// 1. AI Tutor Explanation (Gemini API)
 // ----------------------------------------------------
 app.post('/api/tutor/explain', async (req, res) => {
   const { question, options, selectedOption, correctOption, contextInfo } = req.body;
@@ -381,7 +76,7 @@ Evita tecnicismos excesivos, habla de forma motivadora y clara. ¡Hazlo muy inst
 });
 
 // ----------------------------------------------------
-// 3.5. Export Current Data as Excel (Multiple Sheets)
+// 2. Export Current Data as Excel (Multiple Sheets)
 // ----------------------------------------------------
 app.get('/api/export-excel', (req, res) => {
   try {
@@ -568,7 +263,7 @@ app.get('/api/export-excel', (req, res) => {
 });
 
 // ----------------------------------------------------
-// 4. Google Sheets Sync Proxy
+// 3. Google Sheets Sync Proxy
 // ----------------------------------------------------
 app.post('/api/sheets/sync', async (req, res) => {
   const { sheetUrl } = req.body;
@@ -789,7 +484,7 @@ app.post('/api/sheets/sync', async (req, res) => {
 });
 
 // ----------------------------------------------------
-// 5. Serve Vite/Production App
+// 4. Serve Vite/Production App
 // ----------------------------------------------------
 async function start() {
   if (process.env.NODE_ENV !== 'production') {
