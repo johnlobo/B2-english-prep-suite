@@ -1,3 +1,4 @@
+import dotenv from 'dotenv';
 import express from 'express';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
@@ -5,10 +6,28 @@ import { createServer as createViteServer } from 'vite';
 import * as XLSX from 'xlsx';
 import { DEFAULT_B2_DATA } from './src/data/b2Data';
 
+dotenv.config(); // .env, if present
+dotenv.config({ path: '.env.local', override: true }); // .env.local takes precedence, matching Vite's convention
+
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+const GEMINI_MODEL = 'gemini-2.5-flash';
+
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      }
+    }
+  });
+}
 
 // ----------------------------------------------------
 // 1. AI Tutor Explanation (Gemini API)
@@ -20,21 +39,12 @@ app.post('/api/tutor/explain', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros de la pregunta' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  const ai = getGeminiClient();
+  if (!ai) {
     return res.status(500).json({ error: 'La clave de la API de Gemini (GEMINI_API_KEY) no está configurada.' });
   }
 
   try {
-    const ai = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-
     const isCorrect = selectedOption === correctOption;
 
     const prompt = `
@@ -64,7 +74,47 @@ Evita tecnicismos excesivos, habla de forma motivadora y clara. ¡Hazlo muy inst
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: GEMINI_MODEL,
+      contents: prompt,
+    });
+
+    res.json({ explanation: response.text });
+  } catch (error: any) {
+    console.error('Error calling Gemini API:', error);
+    res.status(500).json({ error: 'Error al contactar con el Tutor de IA: ' + error.message });
+  }
+});
+
+// ----------------------------------------------------
+// 1.5. AI Tutor Free-form Chat (Gemini API)
+// ----------------------------------------------------
+app.post('/api/tutor/chat', async (req, res) => {
+  const { question } = req.body;
+
+  if (!question || typeof question !== 'string') {
+    return res.status(400).json({ error: 'Falta la pregunta del alumno' });
+  }
+
+  const ai = getGeminiClient();
+  if (!ai) {
+    return res.status(500).json({ error: 'La clave de la API de Gemini (GEMINI_API_KEY) no está configurada.' });
+  }
+
+  try {
+    const prompt = `
+Actúa como un tutor de inglés experto y preparador del examen oficial Cambridge B2 First.
+Un alumno te ha hecho la siguiente pregunta o duda en el chat, que puede ser sobre gramática,
+vocabulario, o cualquier otro aspecto del examen. No es necesariamente una pregunta tipo test.
+
+Duda del alumno: "${question}"
+
+Responde en español, de forma clara, motivadora y sin rodeos técnicos innecesarios, usando
+formato Markdown con negritas y ejemplos de frases en inglés cuando ayude a ilustrar la explicación.
+No inventes opciones de respuesta tipo test si el alumno no las ha mencionado.
+`;
+
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
       contents: prompt,
     });
 

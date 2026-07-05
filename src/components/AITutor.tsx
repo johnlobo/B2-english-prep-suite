@@ -35,17 +35,10 @@ export default function AITutor() {
     setLoading(true);
 
     try {
-      // We will proxy to the tutor explain route, or we can use a custom prompt
-      const res = await fetch('/api/tutor/explain', {
+      const res = await fetch('/api/tutor/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: userText,
-          options: { a: 'A', b: 'B', c: 'C', d: 'D' },
-          selectedOption: 'a',
-          correctOption: 'a',
-          contextInfo: 'Pregunta directa de aclaración del chat tutor.'
-        }),
+        body: JSON.stringify({ question: userText }),
       });
 
       const data = await res.json();
