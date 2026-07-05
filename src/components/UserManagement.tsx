@@ -84,46 +84,12 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
         });
       });
       setUsers(usersList);
-      localStorage.setItem('b2_local_users', JSON.stringify(usersList));
     } catch (err: any) {
-      console.warn("Firestore fetch users failed, falling back to local users cache:", err);
-      const cachedUsers = localStorage.getItem('b2_local_users');
-      if (cachedUsers) {
-        try {
-          setUsers(JSON.parse(cachedUsers));
-        } catch (e) {
-          setUsers([]);
-        }
-      } else {
-        const defaultUsersList: UserItem[] = [
-          {
-            id: currentUserId || 'admin-local',
-            name: 'Administrador',
-            email: 'admin@b2mastery.es',
-            role: 'admin',
-            passwordHash: '********',
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'mock-1',
-            name: 'Carlos Sánchez',
-            email: 'carlos.b2@example.com',
-            role: 'user',
-            passwordHash: '********',
-            createdAt: new Date().toISOString()
-          },
-          {
-            id: 'mock-2',
-            name: 'Lucía Fernández',
-            email: 'lucia.b2@example.com',
-            role: 'user',
-            passwordHash: '********',
-            createdAt: new Date().toISOString()
-          }
-        ];
-        setUsers(defaultUsersList);
-        localStorage.setItem('b2_local_users', JSON.stringify(defaultUsersList));
-      }
+      // No silent mock-data fallback here: showing fabricated names (or a stale cache) in an admin
+      // user list is indistinguishable from real accounts and has caused real confusion before.
+      console.error("Firestore fetch users failed:", err);
+      setUsers([]);
+      setError('No se pudo cargar la lista de usuarios desde Firestore: ' + (err.message || err));
     } finally {
       setLoading(false);
     }
@@ -184,60 +150,36 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
     try {
       setError(null);
       const emailNormalized = formData.email.trim().toLowerCase();
-      
+
       // 1. Create user in Firebase Auth using the secondary app helper
-      let uid: string;
-      try {
-        uid = await createAuthUserDirectly(emailNormalized, formData.password.trim());
-        
-        // 2. Save user record in Firestore
-        const userRef = doc(db, 'users', uid);
-        const userDoc = {
-          id: uid,
-          name: formData.name.trim(),
-          email: emailNormalized,
-          role: formData.role,
-          createdAt: new Date().toISOString()
-        };
-        await setDoc(userRef, userDoc);
+      const uid = await createAuthUserDirectly(emailNormalized, formData.password.trim());
 
-        // 3. Save progress record in Firestore
-        const progressRef = doc(db, 'progress', uid);
-        const progressDoc = {
-          userId: uid,
-          completedTheory: [],
-          practiceAttempts: {},
-          examAttempts: []
-        };
-        await setDoc(progressRef, progressDoc);
+      // 2. Save user record in Firestore
+      const userRef = doc(db, 'users', uid);
+      const userDoc = {
+        id: uid,
+        name: formData.name.trim(),
+        email: emailNormalized,
+        role: formData.role,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(userRef, userDoc);
 
-        setSuccess(`Usuario "${formData.name}" creado y registrado en la plataforma con éxito.`);
-      } catch (authOrFirestoreErr: any) {
-        console.warn("Firebase Auth/Firestore user creation failed, falling back to local storage cache:", authOrFirestoreErr);
-        uid = 'local-' + Math.random().toString(36).substring(2, 9);
-        
-        const cachedUsers = localStorage.getItem('b2_local_users');
-        const localList: UserItem[] = cachedUsers ? JSON.parse(cachedUsers) : [];
-        
-        const newUser: UserItem = {
-          id: uid,
-          name: formData.name.trim(),
-          email: emailNormalized,
-          role: formData.role,
-          passwordHash: '********',
-          createdAt: new Date().toISOString()
-        };
-        
-        localList.push(newUser);
-        localStorage.setItem('b2_local_users', JSON.stringify(localList));
-        
-        setSuccess(`Usuario "${formData.name}" creado localmente (modo offline).`);
-      }
+      // 3. Save progress record in Firestore
+      const progressRef = doc(db, 'progress', uid);
+      const progressDoc = {
+        userId: uid,
+        completedTheory: [],
+        practiceAttempts: {},
+        examAttempts: []
+      };
+      await setDoc(progressRef, progressDoc);
 
+      setSuccess(`Usuario "${formData.name}" creado y registrado en la plataforma con éxito.`);
       setIsAdding(false);
       fetchUsers();
     } catch (err: any) {
-      setError(err.message);
+      setError('No se pudo crear el usuario: ' + (err.message || err));
     }
   };
 
@@ -253,33 +195,19 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
       setError(null);
       const emailNormalized = formData.email.trim().toLowerCase();
 
-      try {
-        const userRef = doc(db, 'users', editingUser.id);
-        const updateData: any = {
-          name: formData.name.trim(),
-          email: emailNormalized,
-          role: formData.role
-        };
-        await setDoc(userRef, updateData, { merge: true });
-        setSuccess(`Usuario "${formData.name}" actualizado con éxito.`);
-      } catch (firestoreErr) {
-        console.warn("Firestore update user failed, falling back to local storage update:", firestoreErr);
-        const cachedUsers = localStorage.getItem('b2_local_users');
-        let localList: UserItem[] = cachedUsers ? JSON.parse(cachedUsers) : [];
-        localList = localList.map(u => u.id === editingUser.id ? {
-          ...u,
-          name: formData.name.trim(),
-          email: emailNormalized,
-          role: formData.role
-        } : u);
-        localStorage.setItem('b2_local_users', JSON.stringify(localList));
-        setSuccess(`Usuario "${formData.name}" actualizado localmente.`);
-      }
+      const userRef = doc(db, 'users', editingUser.id);
+      const updateData: any = {
+        name: formData.name.trim(),
+        email: emailNormalized,
+        role: formData.role
+      };
+      await setDoc(userRef, updateData, { merge: true });
+      setSuccess(`Usuario "${formData.name}" actualizado con éxito.`);
 
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
-      setError(err.message);
+      setError('No se pudo actualizar el usuario: ' + (err.message || err));
     }
   };
 
@@ -290,26 +218,17 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
 
     try {
       setError(null);
-      
-      try {
-        await deleteDoc(doc(db, 'users', userId));
-        await deleteDoc(doc(db, 'progress', userId));
-        setSuccess(`Usuario "${userName}" eliminado con éxito.`);
-      } catch (firestoreErr) {
-        console.warn("Firestore delete user failed, falling back to local storage delete:", firestoreErr);
-        const cachedUsers = localStorage.getItem('b2_local_users');
-        let localList: UserItem[] = cachedUsers ? JSON.parse(cachedUsers) : [];
-        localList = localList.filter(u => u.id !== userId);
-        localStorage.setItem('b2_local_users', JSON.stringify(localList));
-        setSuccess(`Usuario "${userName}" eliminado localmente.`);
-      }
+
+      await deleteDoc(doc(db, 'users', userId));
+      await deleteDoc(doc(db, 'progress', userId));
+      setSuccess(`Usuario "${userName}" eliminado con éxito.`);
 
       if (editingUser?.id === userId) {
         setEditingUser(null);
       }
       fetchUsers();
     } catch (err: any) {
-      setError(err.message);
+      setError('No se pudo eliminar el usuario: ' + (err.message || err));
     }
   };
 
