@@ -28,17 +28,19 @@ import AITutor from './components/AITutor';
 import ExamSimulation from './components/ExamSimulation';
 import UserManagement from './components/UserManagement';
 
-// Import Static Data
-import { DEFAULT_B2_DATA as b2Modules, getFullCombinedBank } from './data/b2Data';
-import { UserProgress, Question, PodcastEpisode } from './types';
+// Import Static Data (bundled fallback / seed source — Firestore is the live source of truth)
+import { DEFAULT_B2_DATA as b2Modules } from './data/b2Data';
+import { fetchModulesFromFirestore, seedDefaultContent, fetchContentMeta } from './lib/content';
+import { UserProgress, ModuleData, Question, PodcastEpisode } from './types';
 
 export default function App() {
   // Authentication states
   const [user, setUser] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
   const [progress, setProgress] = useState<UserProgress | null>(null);
-  
-  // Custom synced questions bank
-  const [customQuestions, setCustomQuestions] = useState<Question[]>([]);
+
+  // Study content: starts from the bundled static bank for an instant first paint, then gets
+  // replaced by the shared Firestore copy (which includes anything synced from Google Sheets).
+  const [modules, setModules] = useState<ModuleData[]>(b2Modules);
   const [sheetUrl, setSheetUrl] = useState('');
   const [lastSyncedAt, setLastSyncedAt] = useState('');
 
@@ -114,20 +116,29 @@ export default function App() {
     setStreak(currentStreak);
   };
 
+  // Loads the shared study content from Firestore, seeding it from the bundled static bank the
+  // first time (admin only — see firestore.rules) so the app always has something to show.
+  const loadContent = async (isAdmin: boolean) => {
+    try {
+      const fetched = await fetchModulesFromFirestore();
+      if (fetched) {
+        setModules(fetched);
+      } else if (isAdmin) {
+        const seeded = await seedDefaultContent();
+        setModules(seeded);
+      }
+      // Non-admins on an unseeded project just keep the bundled fallback already in state.
+
+      const meta = await fetchContentMeta();
+      if (meta.sheetUrl) setSheetUrl(meta.sheetUrl);
+      if (meta.lastSyncedAt) setLastSyncedAt(meta.lastSyncedAt);
+    } catch (err) {
+      console.warn('Could not load study content from Firestore, using bundled defaults:', err);
+    }
+  };
+
   // Check client-side session on load & listen to Firebase Auth changes
   useEffect(() => {
-    const savedCustomQs = localStorage.getItem('b2_custom_qs');
-    const savedSheetUrl = localStorage.getItem('b2_sheet_url');
-    const savedSyncDate = localStorage.getItem('b2_sync_date');
-
-    if (savedCustomQs) {
-      try {
-        setCustomQuestions(JSON.parse(savedCustomQs));
-      } catch (e) {}
-    }
-    if (savedSheetUrl) setSheetUrl(savedSheetUrl);
-    if (savedSyncDate) setLastSyncedAt(savedSyncDate);
-    
     // Check and load study streak
     checkAndResetStreakIfBroken();
 
@@ -251,6 +262,7 @@ export default function App() {
           setProgress(progressData);
           localStorage.setItem('b2_user', JSON.stringify(userData));
           localStorage.setItem('b2_progress', JSON.stringify(progressData));
+          loadContent(userData.role === 'admin');
         } catch (err) {
           console.error("Error fetching Firebase user session data:", err);
         }
@@ -283,6 +295,7 @@ export default function App() {
     setProgress(userProgress);
     localStorage.setItem('b2_user', JSON.stringify(authenticatedUser));
     localStorage.setItem('b2_progress', JSON.stringify(userProgress));
+    loadContent(authenticatedUser.role === 'admin');
   };
 
   const handleUpdateProgress = async (updatedFields: Partial<UserProgress>) => {
@@ -312,71 +325,29 @@ export default function App() {
     localStorage.removeItem('b2_progress');
   };
 
-  // Google Sheet integration callbacks
-  const handleSyncSuccess = (questions: Question[], url: string) => {
-    setCustomQuestions(questions);
+  // Google Sheet integration callbacks — the actual Firestore writes happen inside SheetSync.tsx
+  // (via src/lib/content.ts); this just refreshes App's view of the shared content afterwards.
+  const handleSyncSuccess = (updatedModules: ModuleData[], url: string, syncedAt: string) => {
+    setModules(updatedModules);
     setSheetUrl(url);
-    const syncDate = new Date().toISOString();
-    setLastSyncedAt(syncDate);
-
-    localStorage.setItem('b2_custom_qs', JSON.stringify(questions));
-    localStorage.setItem('b2_sheet_url', url);
-    localStorage.setItem('b2_sync_date', syncDate);
+    setLastSyncedAt(syncedAt);
   };
 
-  const handleClearSync = () => {
-    setCustomQuestions([]);
+  const handleClearSync = (defaultModules: ModuleData[]) => {
+    setModules(defaultModules);
     setSheetUrl('');
     setLastSyncedAt('');
-    localStorage.removeItem('b2_custom_qs');
-    localStorage.removeItem('b2_sheet_url');
-    localStorage.removeItem('b2_sync_date');
   };
 
-  // Compile entire bank of questions (combine default preloaded static + Google sheets imported custom)
+  // Flatten every module's practice + control-exam questions into one bank for the exam simulator.
   const getFullActiveQuestionBank = (): Question[] => {
-    const defaultQs = getFullCombinedBank();
-    return [...defaultQs, ...customQuestions];
-  };
-
-  // Dynamically merge sheet questions into the modules structure
-  const dynamicModules = React.useMemo(() => {
-    // Deep clone to avoid mutating the static dataset directly
-    const cloned = JSON.parse(JSON.stringify(b2Modules)) as typeof b2Modules;
-    
-    customQuestions.forEach((q) => {
-      const mIdx = q.moduleIndex;
-      const dIdx = q.dayIndex;
-      
-      if (mIdx !== undefined && mIdx >= 0 && mIdx < cloned.length) {
-        const targetModule = cloned[mIdx];
-        
-        if (dIdx !== undefined && dIdx >= 0 && dIdx < targetModule.days.length) {
-          const targetDay = targetModule.days[dIdx];
-          
-          // Avoid duplicate entries
-          const alreadyExists = targetDay.practiceQuestions.some(
-            (existingQ) => existingQ.id === q.id || existingQ.question.trim().toLowerCase() === q.question.trim().toLowerCase()
-          );
-          
-          if (!alreadyExists) {
-            targetDay.practiceQuestions.push(q);
-          }
-        } else {
-          // If no day index is specified or out of bounds, treat as control exam question
-          const alreadyExists = targetModule.controlExam.some(
-            (existingQ) => existingQ.id === q.id || existingQ.question.trim().toLowerCase() === q.question.trim().toLowerCase()
-          );
-          
-          if (!alreadyExists) {
-            targetModule.controlExam.push(q);
-          }
-        }
-      }
+    const bank: Question[] = [];
+    modules.forEach((mod) => {
+      mod.days.forEach((day) => bank.push(...day.practiceQuestions));
+      bank.push(...mod.controlExam);
     });
-    
-    return cloned;
-  }, [customQuestions]);
+    return bank;
+  };
 
   // Persistent continuous Podcast Episode loader callback
   const handleLoadPodcastEpisode = (episode: PodcastEpisode) => {
@@ -389,11 +360,11 @@ export default function App() {
   }
 
   // Podcast collection of all modules
-  const allPodcasts = dynamicModules.flatMap((m) => m.podcastEpisodes);
+  const allPodcasts = modules.flatMap((m) => m.podcastEpisodes);
 
   // Calculate global progress
   const completedTheoryCount = progress.completedTheory.length;
-  const totalTheoryCount = dynamicModules.reduce((acc, m) => acc + m.days.length, 0);
+  const totalTheoryCount = modules.reduce((acc, m) => acc + m.days.length, 0);
   const theoryPercentage = totalTheoryCount > 0 ? Math.round((completedTheoryCount / totalTheoryCount) * 100) : 0;
 
   return (
@@ -544,7 +515,7 @@ export default function App() {
                 <Dashboard
                   user={user}
                   progress={progress}
-                  modules={dynamicModules}
+                  modules={modules}
                   onSelectTab={(tab, moduleIdx) => {
                     setActiveTab(tab);
                     if (moduleIdx !== undefined) {
@@ -565,7 +536,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
               >
                 <ModuleSection
-                  modules={dynamicModules}
+                  modules={modules}
                   selectedModuleIndex={selectedModuleIndex}
                   onSelectModule={setSelectedModuleIndex}
                   progress={progress}
@@ -610,7 +581,7 @@ export default function App() {
                   lastSyncedAt={lastSyncedAt}
                   onSyncSuccess={handleSyncSuccess}
                   onClearSync={handleClearSync}
-                  customQuestionsCount={customQuestions.length}
+                  hasSyncedContent={!!lastSyncedAt}
                 />
               </motion.div>
             )}

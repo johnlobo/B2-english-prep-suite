@@ -1,4 +1,4 @@
-import { ModuleData, Question } from '../types';
+import { ModuleData } from '../types';
 
 export const DEFAULT_B2_DATA: ModuleData[] = [
   {
@@ -2195,18 +2195,3 @@ export const DEFAULT_B2_DATA: ModuleData[] = [
     ]
   }
 ];
-
-export function getFullCombinedBank(): Question[] {
-  const bank: Question[] = [];
-  
-  DEFAULT_B2_DATA.forEach(module => {
-    // Add day practice questions
-    module.days.forEach(day => {
-      bank.push(...day.practiceQuestions);
-    });
-    // Add control exam questions
-    bank.push(...module.controlExam);
-  });
-
-  return bank;
-}

@@ -204,11 +204,18 @@ app.get('/api/export-excel', (req, res) => {
         'a'
       ],
       [
-        'Explanation.', 
-        'NO (Recomendado)', 
-        'Texto largo', 
-        'Explicación didáctica o gramatical en español que el estudiante verá tras responder o pedir ayuda al Tutor IA.', 
+        'Explanation.',
+        'NO (Recomendado)',
+        'Texto largo',
+        'Explicación didáctica o gramatical en español que el estudiante verá tras responder o pedir ayuda al Tutor IA.',
         'El tiempo verbal correcto es Present Perfect Continuous...'
+      ],
+      [
+        'Theory_Content',
+        'SÍ (para tipo "theory")',
+        'Texto largo',
+        'Reglas de la "chuleta" teórica del día, una por línea (o separadas por "|"). Deja vacías Question/Option_*/Correct_Option en estas filas. Requiere Module y Day.',
+        'Usa Present Perfect con "since"/"for"\nEvita "used to" antes de un gerundio'
       ],
       [],
       ['REGLAS MUY IMPORTANTES PARA EVITAR ERRORES DE SINCRONIZACIÓN:'],
@@ -228,13 +235,28 @@ app.get('/api/export-excel', (req, res) => {
     ];
 
     // 2. Questions Sheet Data
-    const questionsHeader = ['Module', 'Day', 'Type', 'Question', 'Option_A', 'Option_B', 'Option_C', 'Option_D', 'Correct_Option', 'Explanation.'];
+    const questionsHeader = ['Module', 'Day', 'Type', 'Question', 'Option_A', 'Option_B', 'Option_C', 'Option_D', 'Correct_Option', 'Explanation.', 'Theory_Content'];
     const questionsRows: any[][] = [questionsHeader];
 
     DEFAULT_B2_DATA.forEach((module) => {
       const moduleNum = module.index + 1;
 
-      // 1. Practice questions from each day
+      // 1. Theory cheat-sheet content, one row per day
+      module.days.forEach((day, dayIdx) => {
+        const dayNum = dayIdx + 1;
+        if (day.cheatSheet && day.cheatSheet.length > 0) {
+          questionsRows.push([
+            moduleNum,
+            dayNum,
+            'theory',
+            '', '', '', '', '', '',
+            '',
+            day.cheatSheet.join('\n')
+          ]);
+        }
+      });
+
+      // 2. Practice questions from each day
       module.days.forEach((day, dayIdx) => {
         const dayNum = dayIdx + 1;
         day.practiceQuestions.forEach((q) => {
@@ -248,12 +270,13 @@ app.get('/api/export-excel', (req, res) => {
             q.options.c || '',
             q.options.d || '',
             q.correctOption || '',
-            q.explanation || ''
+            q.explanation || '',
+            ''
           ]);
         });
       });
 
-      // 2. Control exams (test questions)
+      // 3. Control exams (test questions)
       if (module.controlExam && Array.isArray(module.controlExam)) {
         module.controlExam.forEach((q) => {
           questionsRows.push([
@@ -266,7 +289,8 @@ app.get('/api/export-excel', (req, res) => {
             q.options.c || '',
             q.options.d || '',
             q.correctOption || '',
-            q.explanation || ''
+            q.explanation || '',
+            ''
           ]);
         });
       }
@@ -295,6 +319,7 @@ app.get('/api/export-excel', (req, res) => {
       { wch: 15 },
       { wch: 15 },
       { wch: 15 },
+      { wch: 55 },
       { wch: 55 }
     ];
 
@@ -506,16 +531,27 @@ app.post('/api/sheets/sync', async (req, res) => {
           });
         }
       } else if (typeVal === 'theory' && item.theory_content) {
-        // Parse theory day
-        // We'll collect these to update modules dynamically
-        // ...
+        // Each non-empty line (or "|"-separated segment, for single-line cells) becomes one
+        // cheat-sheet bullet appended to that module/day's theory content.
+        const cheatSheetLines = item.theory_content
+          .split(/\r?\n|\|/)
+          .map(line => line.trim())
+          .filter(Boolean);
+
+        if (cheatSheetLines.length > 0 && !isNaN(moduleVal) && dayVal !== undefined && !isNaN(dayVal)) {
+          theories.push({
+            moduleIndex: moduleVal,
+            dayIndex: dayVal,
+            cheatSheetLines
+          });
+        }
       }
     });
 
     if (questions.length === 0 && theories.length === 0) {
       return res.status(400).json({
         error: `Se leyó la hoja de cálculo con éxito (${dataRows.length} filas), pero ninguna fila pudo ser procesada como pregunta o tema. ` +
-               `Asegúrate de que la columna 'type' contenga 'practice' o 'test' para preguntas, y que tengan texto en la columna 'question' y una opción correcta ('a', 'b', 'c', 'd') en 'correct_option'. ` +
+               `Asegúrate de que la columna 'type' contenga 'practice' o 'test' para preguntas (con 'question' y 'correct_option'), o 'theory' para teoría (con 'day' y 'theory_content'). ` +
                `Cabeceras leídas y normalizadas: [${headers.join(', ')}]`
       });
     }
@@ -524,7 +560,9 @@ app.post('/api/sheets/sync', async (req, res) => {
       success: true,
       recordsSynced: validRows.length - 1,
       questionsCount: questions.length,
-      questions
+      theoriesCount: theories.length,
+      questions,
+      theories
     });
 
   } catch (error: any) {

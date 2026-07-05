@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { Database, Link2, Info, CheckCircle, RefreshCw, Clipboard, Check, Trash2, ArrowUpRight, Download } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Question } from '../types';
+import { ModuleData } from '../types';
+import { auth } from '../lib/firebase';
+import { mergeSyncedContentIntoFirestore, resetContentToDefaults } from '../lib/content';
 
 interface SheetSyncProps {
   userId: string;
   googleSheetUrl: string;
   lastSyncedAt: string;
-  onSyncSuccess: (questions: Question[], sheetUrl: string) => void;
-  onClearSync: () => void;
-  customQuestionsCount: number;
+  onSyncSuccess: (modules: ModuleData[], sheetUrl: string, syncedAt: string) => void;
+  onClearSync: (defaultModules: ModuleData[]) => void;
+  hasSyncedContent: boolean;
 }
 
 export default function SheetSync({
@@ -18,7 +20,7 @@ export default function SheetSync({
   lastSyncedAt,
   onSyncSuccess,
   onClearSync,
-  customQuestionsCount
+  hasSyncedContent
 }: SheetSyncProps) {
   const [url, setUrl] = useState(googleSheetUrl);
   const [syncing, setSyncing] = useState(false);
@@ -55,6 +57,22 @@ export default function SheetSync({
     }
   };
 
+  const [resetting, setResetting] = useState(false);
+
+  const handleClearSync = async () => {
+    setResetting(true);
+    setError(null);
+    try {
+      const defaultModules = await resetContentToDefaults();
+      onClearSync(defaultModules);
+      setSuccess('Contenido restaurado a la base estática por defecto para todos los alumnos.');
+    } catch (err: any) {
+      setError(err.message || 'No se pudo restaurar el contenido por defecto');
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const handleSync = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url) {
@@ -78,8 +96,21 @@ export default function SheetSync({
         throw new Error(data.error || 'Ocurrió un error inesperado al sincronizar');
       }
 
-      onSyncSuccess(data.questions, url);
-      setSuccess(`¡Sincronización exitosa! Se cargaron ${data.questionsCount} preguntas del examen.`);
+      // Write straight into the shared Firestore content docs so every signed-in student sees the
+      // update immediately, instead of caching it only in this browser's localStorage.
+      const { modules, questionsAdded, theoryLinesAdded } = await mergeSyncedContentIntoFirestore(
+        data.questions,
+        data.theories,
+        url,
+        auth.currentUser?.email ?? null
+      );
+      const syncedAt = new Date().toISOString();
+      onSyncSuccess(modules, url, syncedAt);
+      setSuccess(
+        `¡Sincronización exitosa! Se añadieron ${questionsAdded} preguntas nuevas` +
+        (theoryLinesAdded > 0 ? ` y ${theoryLinesAdded} líneas de teoría` : '') +
+        ` (ya visibles para todos los alumnos).`
+      );
     } catch (err: any) {
       setError(err.message || 'Error de conexión con el servidor de sincronización');
     } finally {
@@ -176,14 +207,15 @@ export default function SheetSync({
                   )}
                 </button>
 
-                {customQuestionsCount > 0 && (
+                {hasSyncedContent && (
                   <button
                     type="button"
-                    onClick={onClearSync}
-                    className="flex justify-center items-center p-3 border border-red-200 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer"
+                    onClick={handleClearSync}
+                    disabled={resetting}
+                    className="flex justify-center items-center p-3 border border-red-200 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer disabled:opacity-50"
                     title="Restaurar Banco de Preguntas Predeterminado"
                   >
-                    <Trash2 className="w-5 h-5" />
+                    {resetting ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
                   </button>
                 )}
               </div>
@@ -194,7 +226,7 @@ export default function SheetSync({
               <div className="bg-slate-50 p-3 rounded-2xl">
                 <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Estado Actual</span>
                 <span className="text-slate-900 font-bold mt-0.5 block font-display">
-                  {customQuestionsCount > 0 ? 'Sincronizado' : 'Utilizando base estática'}
+                  {hasSyncedContent ? 'Sincronizado' : 'Utilizando base estática'}
                 </span>
               </div>
               <div className="bg-slate-50 p-3 rounded-2xl">
@@ -268,6 +300,11 @@ export default function SheetSync({
                     <td className="px-3 py-2 font-mono font-semibold text-indigo-600">explanation</td>
                     <td className="px-3 py-2">Texto de explicación en español</td>
                     <td className="px-3 py-2">Usa 'ago' para referirse a...</td>
+                  </tr>
+                  <tr>
+                    <td className="px-3 py-2 font-mono font-semibold text-indigo-600">theory_content</td>
+                    <td className="px-3 py-2">Solo si type='theory': una línea por regla (o separadas por "|")</td>
+                    <td className="px-3 py-2">Usa Present Perfect con "since"/"for"</td>
                   </tr>
                 </tbody>
               </table>
