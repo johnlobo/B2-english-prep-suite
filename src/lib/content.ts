@@ -145,7 +145,10 @@ export async function mergeSyncedContentIntoFirestore(
     const newQuestion: Question = {
       id: `sheet_${q.moduleIndex}_${q.dayIndex ?? 'exam'}_${targetModule.days.reduce((n, d) => n + d.practiceQuestions.length, 0) + targetModule.controlExam.length}_${Date.now()}`,
       moduleIndex: q.moduleIndex,
-      dayIndex: q.dayIndex,
+      // Firestore's setDoc() rejects any explicit `undefined` field value, so control-exam
+      // questions (no Day column in the sheet) must omit dayIndex entirely rather than set it
+      // to undefined — matching how the bundled DEFAULT_B2_DATA control-exam questions do it.
+      ...(q.dayIndex !== undefined ? { dayIndex: q.dayIndex } : {}),
       question: q.question,
       options: q.options,
       correctOption: q.correctOption,
