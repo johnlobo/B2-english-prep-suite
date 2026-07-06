@@ -12,7 +12,15 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isSignedIn() && request.auth.token.email == 'admin@b2mastery.es';
+      // 'admin@b2mastery.es' covers the very first login, before any user doc exists yet
+      // (see the bootstrap flow in Auth.tsx). Once a user doc exists, its own 'role' field
+      // is authoritative — this must match what the app UI uses to decide who sees the admin
+      // tabs, or an account promoted to admin via the Users panel gets the UI but not the
+      // actual Firestore access.
+      return isSignedIn() && (
+        request.auth.token.email == 'admin@b2mastery.es' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
     }
 
     // Rules for system setup
