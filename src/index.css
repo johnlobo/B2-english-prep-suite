@@ -59,3 +59,19 @@ body {
 .animate-wave-4 { animation: audio-wave 1.0s ease-in-out infinite 0.1s; }
 .animate-wave-5 { animation: audio-wave 1.3s ease-in-out infinite 0.3s; }
 
+/* Most interactive elements in this app use Tailwind's `focus:outline-none` for a cleaner look,
+   which also strips the browser's default keyboard-focus indicator everywhere. Restore one here,
+   centrally, scoped to :focus-visible so it only shows up for keyboard/assistive-tech navigation
+   and not on mouse clicks. Unlayered rules win over Tailwind's `@layer utilities` regardless of
+   selector specificity, so this overrides every `focus:outline-none` in the app without having to
+   edit each component. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
+
