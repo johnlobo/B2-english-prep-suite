@@ -16,9 +16,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, firebaseConfig } from '../lib/firebase';
+import { auth, db, firebaseConfig } from '../lib/firebase';
 import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 
 // Helper to create user in Firebase Auth without disrupting current admin session
 const createAuthUserDirectly = async (email: string, password: string): Promise<string> => {
@@ -40,7 +40,6 @@ interface UserItem {
   name: string;
   email: string;
   role: string;
-  passwordHash: string;
   createdAt?: string;
 }
 
@@ -79,7 +78,6 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
           name: data.name || '',
           email: data.email || '',
           role: data.role || 'user',
-          passwordHash: '********',
           createdAt: data.createdAt
         });
       });
@@ -208,6 +206,26 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
       fetchUsers();
     } catch (err: any) {
       setError('No se pudo actualizar el usuario: ' + (err.message || err));
+    }
+  };
+
+  const [sendingReset, setSendingReset] = useState(false);
+
+  // The client SDK can only change the password of the *currently signed-in* user (see
+  // ADMIN_BOOTSTRAP_PASSWORD/updatePassword in Auth.tsx) — there is no way for an admin to set
+  // another user's password directly without a server-side Admin SDK. Sending a reset email is
+  // the actual supported way to let an admin get another account a new password.
+  const handleSendPasswordReset = async (targetEmail: string) => {
+    setSendingReset(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+      setSuccess(`Se ha enviado un email a ${targetEmail} con instrucciones para restablecer su contraseña.`);
+    } catch (err: any) {
+      setError('No se pudo enviar el email de restablecimiento: ' + (err.message || err));
+    } finally {
+      setSendingReset(false);
     }
   };
 
@@ -347,7 +365,6 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-500 block truncate mt-0.5">{u.email}</span>
-                      <span className="text-[9px] text-slate-400 block mt-0.5">Clave: <code className="bg-slate-100 px-1 py-0.2 rounded font-mono text-[9px] text-slate-600">{u.passwordHash}</code></span>
                     </div>
                   </div>
 
@@ -423,28 +440,39 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                    {editingUser ? 'Nueva Contraseña' : 'Contraseña'}
-                  </label>
-                  <div className="relative">
-                    <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      name="password"
-                      required={isAdding}
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      placeholder={editingUser ? 'Dejar en blanco para no cambiar' : 'Contraseña de acceso'}
-                      className="w-full text-xs pl-9 pr-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50 focus:bg-white font-mono"
-                    />
-                  </div>
-                  {editingUser && (
+                {editingUser ? (
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Contraseña</label>
+                    <button
+                      type="button"
+                      onClick={() => handleSendPasswordReset(editingUser.email)}
+                      disabled={sendingReset}
+                      className="w-full flex items-center justify-center gap-1.5 text-xs py-2 px-3 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors cursor-pointer focus:outline-none"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      {sendingReset ? 'Enviando...' : 'Enviar email para restablecer contraseña'}
+                    </button>
                     <span className="text-[9px] text-slate-400 mt-1 block">
-                      Deja este campo vacío si no quieres alterar la contraseña actual.
+                      Un administrador no puede fijar la contraseña de otra cuenta directamente; esto le envía un enlace de restablecimiento al email del usuario.
                     </span>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Contraseña</label>
+                    <div className="relative">
+                      <KeyRound className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="password"
+                        name="password"
+                        required={isAdding}
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        placeholder="Contraseña de acceso"
+                        className="w-full text-xs pl-9 pr-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50 focus:bg-white font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Rol del Usuario</label>
