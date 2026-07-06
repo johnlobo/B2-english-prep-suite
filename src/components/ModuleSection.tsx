@@ -3,7 +3,7 @@ import { BookOpen, Award, FileText, CheckCircle, HelpCircle, GraduationCap, Arro
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { fetchWithRetry } from '../lib/fetchWithRetry';
+import { authedFetchWithRetry } from '../lib/fetchWithRetry';
 import { ModuleData, Question, UserProgress } from '../types';
 
 interface ModuleSectionProps {
@@ -179,7 +179,7 @@ export default function ModuleSection({
   const handleQueryTutorExplanation = async (q: Question) => {
     setAiExplanations(prev => ({ ...prev, [q.id]: { loading: true } }));
     try {
-      const res = await fetchWithRetry('/api/tutor/explain', {
+      const res = await authedFetchWithRetry('/api/tutor/explain', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

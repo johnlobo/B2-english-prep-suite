@@ -1,3 +1,5 @@
+import { auth } from './firebase';
+
 /**
  * Wraps fetch() with a short automatic retry on 5xx responses. In production these endpoints sit
  * behind an nginx + Authelia auth_request setup that occasionally times out talking to Authelia,
@@ -17,4 +19,20 @@ export async function fetchWithRetry(
     if (lastResponse.status < 500 || attempt >= retries) return lastResponse;
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
+}
+
+/**
+ * Same as fetchWithRetry, but attaches the current Firebase ID token as a Bearer token. The
+ * server.ts endpoints verify this themselves (see serverAuth.ts) rather than relying solely on
+ * whatever reverse proxy happens to sit in front of the app in production.
+ */
+export async function authedFetchWithRetry(
+  input: string,
+  init: RequestInit = {},
+  options?: { retries?: number; delayMs?: number }
+): Promise<Response> {
+  const token = await auth.currentUser?.getIdToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  return fetchWithRetry(input, { ...init, headers }, options);
 }

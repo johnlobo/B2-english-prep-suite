@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { ModuleData } from '../types';
 import { auth } from '../lib/firebase';
 import { mergeSyncedContentIntoFirestore, resetContentToDefaults } from '../lib/content';
-import { fetchWithRetry } from '../lib/fetchWithRetry';
+import { authedFetchWithRetry } from '../lib/fetchWithRetry';
 
 interface SheetSyncProps {
   userId: string;
@@ -34,7 +34,7 @@ export default function SheetSync({
     try {
       setExporting(true);
       setError(null);
-      const res = await fetchWithRetry('/api/export-excel');
+      const res = await authedFetchWithRetry('/api/export-excel');
       if (!res.ok) {
         throw new Error('No se pudo generar el archivo en el servidor');
       }
@@ -86,7 +86,7 @@ export default function SheetSync({
     setSuccess(null);
 
     try {
-      const res = await fetchWithRetry('/api/sheets/sync', {
+      const res = await authedFetchWithRetry('/api/sheets/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sheetUrl: url }),

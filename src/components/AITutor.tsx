@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, Send, Bot, User, RefreshCw, ChevronRight, HelpCircle } from 'lucide-react';
 import { motion } from 'motion/react';
-import { fetchWithRetry } from '../lib/fetchWithRetry';
+import { authedFetchWithRetry } from '../lib/fetchWithRetry';
 
 interface ChatMessage {
   sender: 'user' | 'ai';
@@ -36,7 +36,7 @@ export default function AITutor() {
     setLoading(true);
 
     try {
-      const res = await fetchWithRetry('/api/tutor/chat', {
+      const res = await authedFetchWithRetry('/api/tutor/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: userText }),

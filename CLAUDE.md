@@ -19,6 +19,8 @@ the only automated check — run it after any change.
 Required env vars (see `.env.example`, loaded from `.env.local` via `dotenv` in `server.ts`):
 - `GEMINI_API_KEY` — server-side, required for both AI tutor endpoints.
 - `VITE_ADMIN_BOOTSTRAP_PASSWORD` — client-side (Vite-exposed), see Auth below.
+- `FIREBASE_SERVICE_ACCOUNT_KEY_BASE64` — server-side, required for `requireAuth`/`requireAdmin`
+  (see `serverAuth.ts`) to verify Firebase ID tokens on all four `server.ts` endpoints.
 
 ## Architecture
 
@@ -39,10 +41,15 @@ This app talks to **two independent backends** and it's easy to reach for the wr
     the prompt into a "why is option A correct out of A/B/C/D" structure regardless of input, which
     was a real bug here before the endpoints were split.
   - `GET /api/export-excel` and `POST /api/sheets/sync` — Excel template export and the Google
-    Sheets → question bank CSV import proxy (see below).
+    Sheets → question bank CSV import proxy (see below). Admin-only, gated by `requireAdmin`.
   - In dev mode, `server.ts` also mounts Vite's middleware; in prod it serves `dist/` as static files.
-  It also has no login/session system of its own — do not add auth/progress endpoints here, that's
-  Firestore's job.
+  It still has no login/session system of its own (that's Firestore's job) — but all four endpoints
+  now require a valid Firebase ID token (`requireAuth`/`requireAdmin` in `serverAuth.ts`, verified via
+  the Admin SDK in `firebaseAdmin.ts`), so they're safe to expose without relying on a reverse proxy
+  for access control. This was added after an incident where an Authelia `auth_request` sitting in
+  front of the app started intermittently failing on POST requests, taking these endpoints down with
+  no fallback; frontend calls now go through `authedFetchWithRetry` (`src/lib/fetchWithRetry.ts`),
+  which attaches the ID token and retries once on a 5xx.
 
 ### Content model: static bank + runtime Sheets overlay
 

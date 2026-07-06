@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import * as XLSX from 'xlsx';
 import { DEFAULT_B2_DATA } from './src/data/b2Data';
+import { requireAuth, requireAdmin } from './serverAuth';
 
 dotenv.config(); // .env, if present
 dotenv.config({ path: '.env.local', override: true }); // .env.local takes precedence, matching Vite's convention
@@ -32,7 +33,7 @@ function getGeminiClient(): GoogleGenAI | null {
 // ----------------------------------------------------
 // 1. AI Tutor Explanation (Gemini API)
 // ----------------------------------------------------
-app.post('/api/tutor/explain', async (req, res) => {
+app.post('/api/tutor/explain', requireAuth, async (req, res) => {
   const { question, options, selectedOption, correctOption, contextInfo } = req.body;
 
   if (!question || !options || !correctOption) {
@@ -88,7 +89,7 @@ Evita tecnicismos excesivos, habla de forma motivadora y clara. ¡Hazlo muy inst
 // ----------------------------------------------------
 // 1.5. AI Tutor Free-form Chat (Gemini API)
 // ----------------------------------------------------
-app.post('/api/tutor/chat', async (req, res) => {
+app.post('/api/tutor/chat', requireAuth, async (req, res) => {
   const { question } = req.body;
 
   if (!question || typeof question !== 'string') {
@@ -128,7 +129,7 @@ No inventes opciones de respuesta tipo test si el alumno no las ha mencionado.
 // ----------------------------------------------------
 // 2. Export Current Data as Excel (Multiple Sheets)
 // ----------------------------------------------------
-app.get('/api/export-excel', (req, res) => {
+app.get('/api/export-excel', requireAuth, requireAdmin, (req, res) => {
   try {
     // 1. Instructions Sheet Data
     const instructionsData = [
@@ -354,7 +355,7 @@ app.get('/api/export-excel', (req, res) => {
 // ----------------------------------------------------
 // 3. Google Sheets Sync Proxy
 // ----------------------------------------------------
-app.post('/api/sheets/sync', async (req, res) => {
+app.post('/api/sheets/sync', requireAuth, requireAdmin, async (req, res) => {
   const { sheetUrl } = req.body;
   if (!sheetUrl) {
     return res.status(400).json({ error: 'Falta la URL de Google Sheets' });
