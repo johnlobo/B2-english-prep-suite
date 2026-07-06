@@ -9,7 +9,7 @@ export const firebaseConfig = {
   projectId: "b2-prep",
   storageBucket: "b2-prep.firebasestorage.app",
   messagingSenderId: "380381562896",
-  appId: "1:380381562896:web:fd5fad57fdf8205ddca295"
+  appId: "1:380381562896:web:6e3d944aaef13394dca295"
 };
 
 const app = initializeApp(firebaseConfig);
