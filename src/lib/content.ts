@@ -43,6 +43,42 @@ export async function seedDefaultContent(): Promise<ModuleData[]> {
   return DEFAULT_B2_DATA;
 }
 
+/**
+ * Returns a complete, index-0..N module array, repairing any gaps against the bundled defaults.
+ * Gaps can happen because the initial seed fires all module writes in parallel (Promise.all) —
+ * if one write fails, the others still commit, silently leaving a module missing forever unless
+ * something notices and re-writes just that one.
+ *
+ * When `canWrite` is true (the caller is admin), missing modules are persisted back to Firestore
+ * so the gap is fixed for everyone. Non-admins still get a complete array to render (falling back
+ * to the bundled copy for whatever's missing), they just can't repair Firestore itself.
+ */
+export async function getCompleteModules(canWrite: boolean): Promise<ModuleData[]> {
+  const fetched = await fetchModulesFromFirestore();
+
+  if (!fetched) {
+    if (canWrite) return seedDefaultContent();
+    return DEFAULT_B2_DATA;
+  }
+
+  const presentIndexes = new Set(fetched.map((m) => m.index));
+  const missing = DEFAULT_B2_DATA.filter((mod) => !presentIndexes.has(mod.index));
+  if (missing.length === 0) return fetched;
+
+  console.warn(
+    `Content collection is missing module(s) [${missing.map((m) => m.index).join(', ')}] — ` +
+    (canWrite ? 're-seeding them now.' : 'using the bundled copy for this session.')
+  );
+
+  if (canWrite) {
+    await Promise.all(
+      missing.map((mod) => setDoc(doc(db, CONTENT_COLLECTION, moduleDocId(mod.index)), mod))
+    );
+  }
+
+  return [...fetched, ...missing].sort((a, b) => a.index - b.index);
+}
+
 /** Admin "restore defaults" action: overwrites Firestore content with the bundled static bank. */
 export async function resetContentToDefaults(): Promise<ModuleData[]> {
   const modules = await seedDefaultContent();
@@ -87,7 +123,8 @@ export async function mergeSyncedContentIntoFirestore(
   sheetUrl: string,
   syncedByEmail: string | null
 ): Promise<{ modules: ModuleData[]; questionsAdded: number; theoryLinesAdded: number }> {
-  const current = (await fetchModulesFromFirestore()) ?? (await seedDefaultContent());
+  // true: this function is only reachable from the admin-only Sheets sync UI, so writes are allowed.
+  const current = await getCompleteModules(true);
   // Deep clone so we don't mutate cached references while building the write.
   const modules: ModuleData[] = JSON.parse(JSON.stringify(current));
 

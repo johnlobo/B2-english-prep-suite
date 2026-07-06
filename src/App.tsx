@@ -30,7 +30,7 @@ import UserManagement from './components/UserManagement';
 
 // Import Static Data (bundled fallback / seed source — Firestore is the live source of truth)
 import { DEFAULT_B2_DATA as b2Modules } from './data/b2Data';
-import { fetchModulesFromFirestore, seedDefaultContent, fetchContentMeta } from './lib/content';
+import { getCompleteModules, fetchContentMeta } from './lib/content';
 import { UserProgress, ModuleData, Question, PodcastEpisode } from './types';
 
 export default function App() {
@@ -118,16 +118,12 @@ export default function App() {
 
   // Loads the shared study content from Firestore, seeding it from the bundled static bank the
   // first time (admin only — see firestore.rules) so the app always has something to show.
+  // getCompleteModules also repairs any partially-seeded/missing module (e.g. one write in the
+  // initial parallel seed failed) instead of silently leaving a gap forever.
   const loadContent = async (isAdmin: boolean) => {
     try {
-      const fetched = await fetchModulesFromFirestore();
-      if (fetched) {
-        setModules(fetched);
-      } else if (isAdmin) {
-        const seeded = await seedDefaultContent();
-        setModules(seeded);
-      }
-      // Non-admins on an unseeded project just keep the bundled fallback already in state.
+      const complete = await getCompleteModules(isAdmin);
+      setModules(complete);
 
       const meta = await fetchContentMeta();
       if (meta.sheetUrl) setSheetUrl(meta.sheetUrl);
