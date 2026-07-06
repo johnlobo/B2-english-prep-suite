@@ -91,3 +91,15 @@ Single-page app with no router — `App.tsx` holds `activeTab` state
 one top-level component per tab; `sheets` and `usuarios` are only reachable when
 `user.role === 'admin'`. `main.tsx` wraps the tree in `ErrorBoundary` (`src/components/ErrorBoundary.tsx`)
 so an uncaught error in one tab shows a recoverable fallback instead of a blank page.
+
+### Production deployment
+
+Same pattern as `LinkSafe/`: multi-stage `Dockerfile` builds the Vite client and esbuild-bundles
+`server.ts` to `dist/server.cjs`; GitHub Actions (`.github/workflows/release.yml`) builds the image
+on every published Release, pushes to `ghcr.io/johnlobo/b2-english-prep-suite:latest`, and deploys
+via SSH to `/home/ubuntu/docker/b2-english-prep-suite/`. Reverse proxy: Nginx Proxy Manager on the
+same Docker `proxy-network`, forwarding to container `b2-english-prep-suite:3000`.
+
+`VITE_ADMIN_BOOTSTRAP_PASSWORD` is a client-exposed Vite var, so it must be passed as a Docker
+**build arg** (`secrets.VITE_ADMIN_BOOTSTRAP_PASSWORD` in the workflow) — unlike `GEMINI_API_KEY`,
+which is server-only and supplied as a plain runtime env var in `docker-compose.yml`.

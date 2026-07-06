@@ -1,0 +1,13 @@
+services:
+  b2-english-prep-suite:
+    image: ghcr.io/johnlobo/b2-english-prep-suite:latest
+    container_name: b2-english-prep-suite
+    restart: unless-stopped
+    networks:
+      - proxy-network
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+networks:
+  proxy-network:
+    external: true
