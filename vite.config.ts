@@ -3,9 +3,20 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+const PROXY_BASE = '/proxy/3000';
+
+export default defineConfig(({command}) => {
+  const isProduction = command === 'build';
+
   return {
-    plugins: [react(), tailwindcss()],
+    base: isProduction ? './' : PROXY_BASE + '/',
+    plugins: [
+      react(),
+      tailwindcss(),
+      // Rewrites incoming request URLs to re-add the code-server proxy prefix
+      // before Vite's own middleware matches them against `base`.
+      !isProduction && codeServerProxyPlugin(PROXY_BASE),
+    ].filter(Boolean),
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -23,3 +34,18 @@ export default defineConfig(() => {
     },
   };
 });
+
+function codeServerProxyPlugin(base: string) {
+  const prefix = '/' + base.replace(/^\/|\/$/g, '') + '/';
+  return {
+    name: 'code-server-proxy-fix',
+    configureServer(server: any) {
+      server.middlewares.use((req: any, _res: any, next: any) => {
+        if (req.url && !req.url.startsWith(prefix)) {
+          req.url = prefix + req.url.replace(/^\//, '');
+        }
+        next();
+      });
+    },
+  };
+}
