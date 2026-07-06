@@ -218,6 +218,20 @@ app.get('/api/export-excel', (req, res) => {
         'Usa Present Perfect con "since"/"for"\nEvita "used to" antes de un gerundio'
       ],
       [],
+      ['NÚMEROS DE MÓDULO Y DÍA DE REFERENCIA (según el contenido actual de la app)'],
+      ['Usa estos números en las columnas "Module" y "Day" para saber a qué tema estás añadiendo contenido.'],
+      ['Módulo', 'Título del Módulo', 'Día', 'Título del Día'],
+      ...DEFAULT_B2_DATA.flatMap((module) => {
+        const moduleNum = module.index + 1;
+        if (module.days.length === 0) return [[moduleNum, module.title, '', '']];
+        return module.days.map((day, dayIdx) => [
+          dayIdx === 0 ? moduleNum : '',
+          dayIdx === 0 ? module.title : '',
+          dayIdx + 1,
+          day.title,
+        ]);
+      }),
+      [],
       ['REGLAS MUY IMPORTANTES PARA EVITAR ERRORES DE SINCRONIZACIÓN:'],
       ['1. No modifiques ni renombres las cabeceras de la solapa "Preguntas". Deben ser exactamente de la fila 1.'],
       ['2. Las letras de la columna "Correct_Option" deben estar en minúsculas (a, b, c, d). Nunca en mayúsculas.'],
