@@ -26,7 +26,11 @@ service cloud.firestore {
     // Rules for system setup
     match /system/{documentId} {
       allow read: if true;
-      allow write: if isAdmin() || !exists(/databases/$(database)/documents/system/setup);
+      // Every legitimate write path (admin bootstrap password change, Sheets sync, content reset)
+      // runs while already signed in as the admin (isAdmin() checks the auth token email directly,
+      // so it works even before any Firestore user doc exists). There is no flow that needs an
+      // unauthenticated/pre-setup write bypass, so none is granted here.
+      allow write: if isAdmin();
     }
 
     // Rules for users
