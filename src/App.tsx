@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
+import { loadUserProfile, loadUserProgress } from './lib/userSession';
 
 // Import our custom sub-components
 import Auth from './components/Auth';
@@ -142,117 +143,22 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          // Fetch user profile from Firestore
-          const userRef = doc(db, 'users', firebaseUser.uid);
-          let userData: any = null;
-          
-          try {
-            const userSnap = await getDoc(userRef);
-            if (userSnap.exists()) {
-              userData = userSnap.data();
-            } else {
-              userData = {
-                id: firebaseUser.uid,
-                name: firebaseUser.email === 'admin@b2mastery.es' ? 'Administrador' : (firebaseUser.displayName || 'Estudiante'),
-                email: firebaseUser.email || '',
-                role: firebaseUser.email === 'admin@b2mastery.es' ? 'admin' : 'user',
-                createdAt: new Date().toISOString()
-              };
-              await setDoc(userRef, userData);
-            }
-          } catch (firestoreErr) {
-            console.warn("Firestore fetch user failed, falling back to cached user state", firestoreErr);
-            const cachedUserStr = localStorage.getItem('b2_user');
-            if (cachedUserStr) {
-              userData = JSON.parse(cachedUserStr);
-            } else {
-              userData = {
-                id: firebaseUser.uid,
-                name: firebaseUser.email === 'admin@b2mastery.es' ? 'Administrador' : (firebaseUser.displayName || 'Estudiante'),
-                email: firebaseUser.email || '',
-                role: firebaseUser.email === 'admin@b2mastery.es' ? 'admin' : 'user',
-                createdAt: new Date().toISOString()
-              };
-            }
+          const cachedUserStr = localStorage.getItem('b2_user');
+          const cachedUser = cachedUserStr ? JSON.parse(cachedUserStr) : null;
+          const userData = await loadUserProfile(firebaseUser.uid, firebaseUser.email || '', cachedUser);
+
+          // Force logout and prompt password change if mustChangePassword is active
+          if (userData.mustChangePassword === true) {
+            setUser(null);
+            setProgress(null);
+            localStorage.removeItem('b2_user');
+            localStorage.removeItem('b2_progress');
+            return;
           }
 
-          // Auto-repair and enforce password change check on session restoration
-          if (userData) {
-            const isAdminEmail = firebaseUser.email === 'admin@b2mastery.es';
-            let needsUpdate = false;
-            
-            if (isAdminEmail && userData.role !== 'admin') {
-              userData.role = 'admin';
-              needsUpdate = true;
-            }
-            if (isAdminEmail && userData.name === 'Estudiante') {
-              userData.name = 'Administrador';
-              needsUpdate = true;
-            }
-
-            // Check setup status
-            let isSetupComplete = false;
-            try {
-              const setupSnap = await getDoc(doc(db, 'system', 'setup'));
-              isSetupComplete = setupSnap.exists() ? !!setupSnap.data().adminSetupComplete : false;
-            } catch (e) {
-              isSetupComplete = false;
-            }
-
-            if (firebaseUser.email === 'admin@b2mastery.es' && !isSetupComplete && userData.mustChangePassword !== false) {
-              userData.mustChangePassword = true;
-              needsUpdate = true;
-            }
-
-            if (needsUpdate) {
-              try {
-                await setDoc(userRef, userData, { merge: true });
-              } catch (setDocErr) {
-                console.warn("Failed to auto-repair user profile on Firebase (might be rules):", setDocErr);
-              }
-            }
-
-            // Force logout and prompt password change if mustChangePassword is active
-            if (userData.mustChangePassword === true) {
-              setUser(null);
-              setProgress(null);
-              localStorage.removeItem('b2_user');
-              localStorage.removeItem('b2_progress');
-              return;
-            }
-          }
-
-          // Fetch user progress from Firestore
-          const progressRef = doc(db, 'progress', firebaseUser.uid);
-          let progressData: any = null;
-
-          try {
-            const progressSnap = await getDoc(progressRef);
-            if (progressSnap.exists()) {
-              progressData = progressSnap.data();
-            } else {
-              progressData = {
-                userId: firebaseUser.uid,
-                completedTheory: [],
-                practiceAttempts: {},
-                examAttempts: []
-              };
-              await setDoc(progressRef, progressData);
-            }
-          } catch (firestoreErr) {
-            console.warn("Firestore fetch progress failed, falling back to cached progress state", firestoreErr);
-            const cachedProgressStr = localStorage.getItem('b2_progress');
-            if (cachedProgressStr) {
-              progressData = JSON.parse(cachedProgressStr);
-            } else {
-              progressData = {
-                userId: firebaseUser.uid,
-                completedTheory: [],
-                practiceAttempts: {},
-                examAttempts: []
-              };
-            }
-          }
+          const cachedProgressStr = localStorage.getItem('b2_progress');
+          const cachedProgress = cachedProgressStr ? JSON.parse(cachedProgressStr) : null;
+          const progressData = await loadUserProgress(firebaseUser.uid, cachedProgress);
 
           setUser(userData);
           setProgress(progressData);

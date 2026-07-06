@@ -4,11 +4,16 @@ import { motion } from 'motion/react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, deleteDoc, collection, query, where, limit, getDocs } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import {
+  ADMIN_BOOTSTRAP_EMAIL,
+  loadUserProfile,
+  loadUserProgress,
+  isAdminSetupComplete as checkAdminSetupComplete,
+} from '../lib/userSession';
 
-// Bootstrap credentials for the very first admin login (before any account exists in Firebase Auth).
-// The password lives in VITE_ADMIN_BOOTSTRAP_PASSWORD (.env.local, never committed) rather than in
-// source, since this file ends up in a public repo.
-const ADMIN_BOOTSTRAP_EMAIL = 'admin@b2mastery.es';
+// Bootstrap password for the very first admin login (before any account exists in Firebase Auth).
+// It lives in VITE_ADMIN_BOOTSTRAP_PASSWORD (.env.local, never committed) rather than in source,
+// since this file ends up in a public repo.
 const ADMIN_BOOTSTRAP_PASSWORD = import.meta.env.VITE_ADMIN_BOOTSTRAP_PASSWORD as string | undefined;
 
 interface AuthProps {
@@ -135,71 +140,11 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
 
       // 2. User authenticated successfully
       const uid = userCredential.user.uid;
-      const userRef = doc(db, 'users', uid);
-      let userData: any = null;
-      try {
-        const userSnap = await getDoc(userRef);
-        userData = userSnap.exists() ? userSnap.data() : null;
-      } catch (firestoreErr) {
-        console.warn("Firestore user fetch failed, falling back to local memory state:", firestoreErr);
-      }
 
-      const isAdminEmail = normalizedEmail === ADMIN_BOOTSTRAP_EMAIL;
-      
-      // Determine setup status
-      let isSetupComplete = isAdminSetupComplete;
-      if (isSetupComplete === null) {
-        try {
-          const setupSnap = await getDoc(doc(db, 'system', 'setup'));
-          isSetupComplete = setupSnap.exists() ? !!setupSnap.data().adminSetupComplete : false;
-        } catch (e) {
-          isSetupComplete = false;
-        }
-      }
-
-      if (!userData) {
-        // Fallback if auth exists but firestore record was not found (e.g. if created outside or db changed)
-        userData = {
-          id: uid,
-          name: isAdminEmail ? 'Administrador' : 'Estudiante',
-          email: normalizedEmail,
-          role: isAdminEmail ? 'admin' : 'user',
-          mustChangePassword: normalizedEmail === ADMIN_BOOTSTRAP_EMAIL && !isSetupComplete,
-          createdAt: new Date().toISOString()
-        };
-        try {
-          await setDoc(userRef, userData);
-        } catch (firestoreErr) {
-          console.warn("Firestore user save failed, continuing with memory state:", firestoreErr);
-        }
-      } else {
-        // Auto-repair if the user is an admin but Firestore record is outdated/incorrect
-        let needsUpdate = false;
-        const updatedData = { ...userData };
-
-        if (isAdminEmail && userData.role !== 'admin') {
-          updatedData.role = 'admin';
-          needsUpdate = true;
-        }
-        if (isAdminEmail && userData.name === 'Estudiante') {
-          updatedData.name = 'Administrador';
-          needsUpdate = true;
-        }
-        // Force password change if default admin account and setup is not completed
-        if (normalizedEmail === ADMIN_BOOTSTRAP_EMAIL && !isSetupComplete && userData.mustChangePassword !== false) {
-          updatedData.mustChangePassword = true;
-          needsUpdate = true;
-        }
-
-        if (needsUpdate) {
-          userData = updatedData;
-          try {
-            await setDoc(userRef, userData, { merge: true });
-          } catch (firestoreErr) {
-            console.warn("Firestore user update failed, continuing:", firestoreErr);
-          }
-        }
-      }
+      // Reuse the setup-status check from the mount-time effect when available, to avoid a
+      // redundant Firestore read on every login.
+      const setupComplete = isAdminSetupComplete !== null ? isAdminSetupComplete : await checkAdminSetupComplete();
+      const userData = await loadUserProfile(uid, normalizedEmail, null, setupComplete);
 
       // Force password change if marked
       if (userData.mustChangePassword === true) {
@@ -208,40 +153,14 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
         return;
       }
 
-      // Retrieve progress
-      const progressRef = doc(db, 'progress', uid);
-      let progressData: any = null;
-      try {
-        const progressSnap = await getDoc(progressRef);
-        progressData = progressSnap.exists() ? progressSnap.data() : null;
-      } catch (firestoreErr) {
-        console.warn("Firestore progress fetch failed:", firestoreErr);
-      }
-
-      if (!progressData) {
-        // Try local storage
-        const cachedProgressStr = localStorage.getItem('b2_progress');
-        if (cachedProgressStr) {
-          try {
-            progressData = JSON.parse(cachedProgressStr);
-          } catch (e) {}
-        }
-        
-        if (!progressData) {
-          progressData = {
-            userId: uid,
-            completedTheory: [],
-            practiceAttempts: {},
-            examAttempts: []
-          };
-        }
-
+      const cachedProgressStr = localStorage.getItem('b2_progress');
+      let cachedProgress = null;
+      if (cachedProgressStr) {
         try {
-          await setDoc(progressRef, progressData);
-        } catch (firestoreErr) {
-          console.warn("Firestore progress save failed, continuing with memory state:", firestoreErr);
-        }
+          cachedProgress = JSON.parse(cachedProgressStr);
+        } catch (e) {}
       }
+      const progressData = await loadUserProgress(uid, cachedProgress);
 
       onAuthSuccess(
         { id: userData.id, name: userData.name, email: userData.email, role: userData.role },
