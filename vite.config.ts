@@ -17,6 +17,9 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Vite's dev server only accepts requests whose Host header matches localhost by default
+      // (DNS-rebinding protection). Accessing it through the VPS's real domain needs it listed here.
+      allowedHosts: ['code-server.digitalpartners.es'],
     },
   };
 });
