@@ -107,10 +107,16 @@ export async function fetchContentMeta(): Promise<ContentMeta> {
   };
 }
 
+// Collapses internal whitespace too (not just leading/trailing), since copy-pasting question
+// banks into Sheets/Excel commonly introduces double spaces or stray newlines that would
+// otherwise make an identical question look "new" and get imported as a duplicate.
+function normalizeQuestionText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 function questionAlreadyExists(existing: Question[], incoming: SyncedQuestionRow): boolean {
-  return existing.some(
-    (q) => q.question.trim().toLowerCase() === incoming.question.trim().toLowerCase()
-  );
+  const incomingNormalized = normalizeQuestionText(incoming.question);
+  return existing.some((q) => normalizeQuestionText(q.question) === incomingNormalized);
 }
 
 /**
