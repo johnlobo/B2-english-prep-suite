@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Compass,
   BookOpen,
@@ -32,6 +32,7 @@ import UserManagement from './components/UserManagement';
 // Import Static Data (bundled fallback / seed source — Firestore is the live source of truth)
 import { DEFAULT_B2_DATA as b2Modules } from './data/b2Data';
 import { getCompleteModules, fetchContentMeta } from './lib/content';
+import { calculateGlobalProgress } from './lib/progress';
 import { UserProgress, ModuleData, Question, PodcastEpisode } from './types';
 
 export default function App() {
@@ -242,14 +243,14 @@ export default function App() {
   };
 
   // Flatten every module's practice + control-exam questions into one bank for the exam simulator.
-  const getFullActiveQuestionBank = (): Question[] => {
+  const fullActiveQuestionBank = useMemo((): Question[] => {
     const bank: Question[] = [];
     modules.forEach((mod) => {
       mod.days.forEach((day) => bank.push(...day.practiceQuestions));
       bank.push(...mod.controlExam);
     });
     return bank;
-  };
+  }, [modules]);
 
   // Persistent continuous Podcast Episode loader callback
   const handleLoadPodcastEpisode = (episode: PodcastEpisode) => {
@@ -264,10 +265,8 @@ export default function App() {
   // Podcast collection of all modules
   const allPodcasts = modules.flatMap((m) => m.podcastEpisodes);
 
-  // Calculate global progress
-  const completedTheoryCount = progress.completedTheory.length;
-  const totalTheoryCount = modules.reduce((acc, m) => acc + m.days.length, 0);
-  const theoryPercentage = totalTheoryCount > 0 ? Math.round((completedTheoryCount / totalTheoryCount) * 100) : 0;
+  // Calculate global progress (30% theory read + 70% test performance)
+  const globalProgressPercentage = calculateGlobalProgress(progress, modules);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans relative pb-16">
@@ -299,10 +298,10 @@ export default function App() {
               <div className="w-32 lg:w-48 h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div 
                   className="h-full bg-indigo-500 transition-all duration-500" 
-                  style={{ width: `${theoryPercentage}%` }}
+                  style={{ width: `${globalProgressPercentage}%` }}
                 ></div>
               </div>
-              <span className="text-xs font-bold text-indigo-600">{theoryPercentage}%</span>
+              <span className="text-xs font-bold text-indigo-600">{globalProgressPercentage}%</span>
             </div>
           </div>
 
@@ -507,7 +506,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
               >
                 <ExamSimulation
-                  questions={getFullActiveQuestionBank()}
+                  questions={fullActiveQuestionBank}
                   onComplete={(attempt) => {
                     const attempts = progress.examAttempts || [];
                     handleUpdateProgress({ examAttempts: [...attempts, attempt] });
