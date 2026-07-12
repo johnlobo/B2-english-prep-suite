@@ -35,6 +35,10 @@ import { getCompleteModules, fetchContentMeta } from './lib/content';
 import { calculateGlobalProgress } from './lib/progress';
 import { UserProgress, ModuleData, Question, PodcastEpisode } from './types';
 
+// Set at build time from the GitHub Release tag (see Dockerfile / release.yml); falls back to
+// 'dev' for local builds that don't pass VITE_APP_VERSION.
+const APP_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) || 'dev';
+
 export default function App() {
   // Authentication states
   const [user, setUser] = useState<{ id: string; name: string; email: string; role?: string } | null>(null);
@@ -277,6 +281,7 @@ export default function App() {
           <div>
             <h1 className="font-bold text-sm sm:text-lg leading-tight font-display text-slate-900">
               Exam Master: Cambridge English
+              <span className="ml-2 align-middle text-[9px] font-mono font-normal text-slate-300 normal-case">{APP_VERSION}</span>
             </h1>
             <p className="text-[10px] sm:text-xs text-slate-500 uppercase tracking-wider font-semibold">
               Authorized Access: {user.name}

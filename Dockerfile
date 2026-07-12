@@ -13,6 +13,9 @@ COPY . .
 # must be supplied here, not just as a runtime env var in the runner stage.
 ARG VITE_ADMIN_BOOTSTRAP_PASSWORD
 ENV VITE_ADMIN_BOOTSTRAP_PASSWORD=$VITE_ADMIN_BOOTSTRAP_PASSWORD
+# Release tag (e.g. v1.3.1), shown in the UI so a build can be identified at a glance.
+ARG VITE_APP_VERSION
+ENV VITE_APP_VERSION=$VITE_APP_VERSION
 ENV NODE_ENV=production
 RUN npm run build
 
