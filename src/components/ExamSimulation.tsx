@@ -3,6 +3,21 @@ import { Award, CheckCircle, Clock, AlertCircle, RefreshCw, Sparkles, ChevronLef
 import { motion, AnimatePresence } from 'motion/react';
 import { Question, ExamAttempt } from '../types';
 
+const STORAGE_KEY = 'b2_simulation_inprogress';
+const DURATION_SECONDS = 30 * 60;
+
+interface SavedSimulationState {
+  questionIds: string[];
+  answers: { [qId: string]: string };
+  markedForReview: string[];
+  currentIdx: number;
+  startedAt: string; // ISO
+}
+
+interface ResumeData extends SavedSimulationState {
+  questions: Question[];
+}
+
 interface ExamSimulationProps {
   questions: Question[];
   onComplete: (attempt: ExamAttempt) => void;
@@ -15,32 +30,61 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
   const [answers, setAnswers] = useState<{ [qId: string]: string }>({});
   const [markedForReview, setMarkedForReview] = useState<string[]>([]);
   const [isStarted, setIsStarted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(30 * 60); // 30 minutes in seconds
+  const [startedAt, setStartedAt] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(DURATION_SECONDS);
   const [isFinished, setIsFinished] = useState(false);
   const [score, setScore] = useState(0);
   const [correctAnswersCount, setCorrectAnswersCount] = useState(0);
+  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
 
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
-    // Pick 20 random questions from the pool
-    if (questions.length > 0) {
-      const shuffled = [...questions].sort(() => 0.5 - Math.random());
-      setSimulationQuestions(shuffled.slice(0, 20));
-    }
-  }, [questions]);
+    // Pick 20 random questions from the pool, unless there's an unfinished attempt to offer resuming.
+    if (questions.length === 0 || simulationQuestions.length > 0) return;
 
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const data: SavedSimulationState = JSON.parse(saved);
+        const restored = data.questionIds
+          .map((id) => questions.find((q) => q.id === id))
+          .filter((q): q is Question => !!q);
+        if (restored.length === data.questionIds.length && restored.length > 0) {
+          setResumeData({ ...data, questions: restored });
+          return;
+        }
+      } catch {
+        // fall through to discard the unreadable saved state and start fresh
+      }
+      localStorage.removeItem(STORAGE_KEY);
+    }
+
+    const shuffled = [...questions].sort(() => 0.5 - Math.random());
+    setSimulationQuestions(shuffled.slice(0, 20));
+  }, [questions, simulationQuestions.length]);
+
+  // Persist progress on every change while the attempt is active, so it survives a reload/close.
+  useEffect(() => {
+    if (!isStarted || isFinished || !startedAt || simulationQuestions.length === 0) return;
+    const data: SavedSimulationState = {
+      questionIds: simulationQuestions.map((q) => q.id),
+      answers,
+      markedForReview,
+      currentIdx,
+      startedAt,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }, [answers, markedForReview, currentIdx, isStarted, isFinished, simulationQuestions, startedAt]);
+
+  // Countdown is a pure decrement — the actual "time's up" handling lives in the effect below,
+  // which always runs with fresh `answers`/`simulationQuestions`. Wiring the finish call directly
+  // inside this interval's closure would freeze it to whatever those were when the interval was
+  // created (right when the exam started, i.e. before any answers existed).
   useEffect(() => {
     if (isStarted && !isFinished) {
       timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current);
-            handleFinishSimulation();
-            return 0;
-          }
-          return prev - 1;
-        });
+        setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
       }, 1000);
     }
 
@@ -49,8 +93,36 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
     };
   }, [isStarted, isFinished]);
 
+  useEffect(() => {
+    if (isStarted && !isFinished && timeLeft === 0) {
+      handleFinishSimulation();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft]);
+
   const handleStart = () => {
+    setStartedAt(new Date().toISOString());
     setIsStarted(true);
+  };
+
+  const handleResume = () => {
+    if (!resumeData) return;
+    const elapsed = Math.floor((Date.now() - new Date(resumeData.startedAt).getTime()) / 1000);
+    setSimulationQuestions(resumeData.questions);
+    setAnswers(resumeData.answers);
+    setMarkedForReview(resumeData.markedForReview);
+    setCurrentIdx(Math.min(resumeData.currentIdx, resumeData.questions.length - 1));
+    setStartedAt(resumeData.startedAt);
+    setTimeLeft(Math.max(0, DURATION_SECONDS - elapsed));
+    setIsStarted(true);
+    setResumeData(null);
+  };
+
+  const handleDiscardResume = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setResumeData(null);
+    const shuffled = [...questions].sort(() => 0.5 - Math.random());
+    setSimulationQuestions(shuffled.slice(0, 20));
   };
 
   const handleSelectAnswer = (qId: string, opt: string) => {
@@ -78,6 +150,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
     setCorrectAnswersCount(correctCount);
     setScore(calculatedScore);
     setIsFinished(true);
+    localStorage.removeItem(STORAGE_KEY);
 
     // Save exam attempt in progress
     const newAttempt: ExamAttempt = {
@@ -117,6 +190,33 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
               <Clock className="w-8 h-8" />
             </div>
 
+            {resumeData ? (
+              <>
+                <div className="space-y-2">
+                  <h2 className="text-xl sm:text-2xl font-extrabold font-display text-slate-900">Simulacro sin terminar</h2>
+                  <p className="text-sm text-slate-600 max-w-xl mx-auto leading-relaxed">
+                    Tienes un simulacro en progreso: pregunta <strong>{resumeData.currentIdx + 1} de {resumeData.questions.length}</strong>,{' '}
+                    <strong>{Object.keys(resumeData.answers).length}</strong> respondidas. Puedes continuarlo o descartarlo y empezar uno nuevo.
+                  </p>
+                </div>
+
+                <div className="pt-4 flex justify-center space-x-3">
+                  <button
+                    onClick={handleDiscardResume}
+                    className="px-5 py-2.5 border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors focus:outline-none cursor-pointer text-sm"
+                  >
+                    Empezar de Nuevo
+                  </button>
+                  <button
+                    onClick={handleResume}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-md shadow-indigo-100 focus:outline-none cursor-pointer text-sm"
+                  >
+                    Continuar Simulacro
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
             <div className="space-y-2">
               <h2 className="text-xl sm:text-2xl font-extrabold font-display text-slate-900">Simulación de Examen B2 First</h2>
               <p className="text-sm text-slate-600 max-w-xl mx-auto leading-relaxed">
@@ -148,6 +248,8 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
                 Comenzar Simulación
               </button>
             </div>
+              </>
+            )}
           </motion.div>
         ) : !isFinished ? (
           // Active Exam view

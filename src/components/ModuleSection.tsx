@@ -36,6 +36,35 @@ export default function ModuleSection({
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [examScore, setExamScore] = useState(0);
 
+  const examStorageKey = (modIndex: number) => `b2_module_exam_inprogress_M${modIndex}`;
+
+  // Restore (or start blank) whenever the selected module changes, so an in-progress control
+  // exam survives switching tabs/modules and reloading, instead of being silently discarded.
+  useEffect(() => {
+    const saved = localStorage.getItem(examStorageKey(selectedModuleIndex));
+    if (saved) {
+      try {
+        setExamAnswers(JSON.parse(saved));
+      } catch {
+        setExamAnswers({});
+      }
+    } else {
+      setExamAnswers({});
+    }
+    setExamSubmitted(false);
+    setExamScore(0);
+  }, [selectedModuleIndex]);
+
+  // Persist in-progress answers on every change; clear once there's nothing left to save.
+  useEffect(() => {
+    if (examSubmitted) return;
+    if (Object.keys(examAnswers).length === 0) {
+      localStorage.removeItem(examStorageKey(selectedModuleIndex));
+    } else {
+      localStorage.setItem(examStorageKey(selectedModuleIndex), JSON.stringify(examAnswers));
+    }
+  }, [examAnswers, examSubmitted, selectedModuleIndex]);
+
   // Study Notes state
   const [noteText, setNoteText] = useState('');
   const [isLoadingNote, setIsLoadingNote] = useState(false);
@@ -221,6 +250,7 @@ export default function ModuleSection({
     const score = Math.round((correctCount / currentModule.controlExam.length) * 100);
     setExamScore(score);
     setExamSubmitted(true);
+    localStorage.removeItem(examStorageKey(selectedModuleIndex));
 
     // Save exam attempt in progress
     const newAttempt = {
@@ -256,7 +286,8 @@ export default function ModuleSection({
               onSelectModule(mod.index);
               setSelectedDayIndex(0);
               handleResetPractice();
-              handleResetExam();
+              // Exam state for the target module is restored (or blanked) by the
+              // selectedModuleIndex effect above — no manual reset needed here.
             }}
             className={`py-3 px-5 text-sm font-semibold tracking-tight border-b-2 transition-all mr-2 cursor-pointer focus:outline-none ${
               selectedModuleIndex === mod.index
