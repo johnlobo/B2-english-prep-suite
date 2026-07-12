@@ -27,9 +27,64 @@ export default function ModuleSection({
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
 
   // Practice state
+  const [practiceQuestions, setPracticeQuestions] = useState<Question[]>([]);
   const [practiceAnswers, setPracticeAnswers] = useState<{ [qId: string]: string }>({});
   const [practiceSubmitted, setPracticeSubmitted] = useState(false);
   const [aiExplanations, setAiExplanations] = useState<{ [qId: string]: { loading: boolean; text?: string } }>({});
+
+  const PRACTICE_QUESTION_COUNT = 10;
+  const practiceStorageKey = (modIndex: number, dayIndex: number) =>
+    `b2_practice_inprogress_M${modIndex}_D${dayIndex}`;
+
+  // Restore an in-progress practice attempt (same question set + answers) whenever the selected
+  // day changes, so it survives switching tabs/days and reloading. If there's nothing to resume,
+  // sample a fresh random set — this only happens on a genuinely new attempt (submit, or
+  // "Intentar de Nuevo la Práctica" after submitting, both clear the saved state), so retrying
+  // never repeats the same set.
+  useEffect(() => {
+    const day = modules[selectedModuleIndex]?.days[selectedDayIndex];
+    if (!day) return;
+
+    const key = practiceStorageKey(selectedModuleIndex, selectedDayIndex);
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const data: { questionIds: string[]; answers: { [qId: string]: string } } = JSON.parse(saved);
+        const restored = data.questionIds
+          .map((id) => day.practiceQuestions.find((q) => q.id === id))
+          .filter((q): q is Question => !!q);
+        if (restored.length === data.questionIds.length && restored.length > 0) {
+          setPracticeQuestions(restored);
+          setPracticeAnswers(data.answers || {});
+          setPracticeSubmitted(false);
+          setAiExplanations({});
+          return;
+        }
+      } catch {
+        // fall through to discard the unreadable saved state and start a fresh attempt
+      }
+      localStorage.removeItem(key);
+    }
+
+    const shuffled = [...day.practiceQuestions].sort(() => 0.5 - Math.random());
+    setPracticeQuestions(shuffled.slice(0, Math.min(PRACTICE_QUESTION_COUNT, shuffled.length)));
+    setPracticeAnswers({});
+    setPracticeSubmitted(false);
+    setAiExplanations({});
+  }, [selectedModuleIndex, selectedDayIndex, modules]);
+
+  // Persist in-progress answers (and the sampled question set) on every change; clear once
+  // there's nothing left to save.
+  useEffect(() => {
+    if (practiceSubmitted) return;
+    const key = practiceStorageKey(selectedModuleIndex, selectedDayIndex);
+    if (Object.keys(practiceAnswers).length === 0) {
+      localStorage.removeItem(key);
+    } else {
+      const data = { questionIds: practiceQuestions.map((q) => q.id), answers: practiceAnswers };
+      localStorage.setItem(key, JSON.stringify(data));
+    }
+  }, [practiceAnswers, practiceSubmitted, selectedModuleIndex, selectedDayIndex, practiceQuestions]);
 
   // Exam state
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
@@ -37,7 +92,7 @@ export default function ModuleSection({
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [examScore, setExamScore] = useState(0);
 
-  const QUESTIONS_PER_DAY = 2;
+  const QUESTIONS_PER_DAY = 4;
   const examStorageKey = (modIndex: number) => `b2_module_exam_inprogress_M${modIndex}`;
 
   // End-of-module exam: guarantees coverage of every day in the module (QUESTIONS_PER_DAY
@@ -213,19 +268,20 @@ export default function ModuleSection({
   const handlePracticeSubmit = () => {
     if (!currentDay) return;
     let correctCount = 0;
-    currentDay.practiceQuestions.forEach(q => {
+    practiceQuestions.forEach(q => {
       if (practiceAnswers[q.id] === q.correctOption) correctCount++;
     });
 
-    const score = Math.round((correctCount / currentDay.practiceQuestions.length) * 100);
+    const score = Math.round((correctCount / practiceQuestions.length) * 100);
     setPracticeSubmitted(true);
+    localStorage.removeItem(practiceStorageKey(selectedModuleIndex, selectedDayIndex));
 
     // Save attempt
     const newAttempt = {
       moduleIndex: selectedModuleIndex,
       dayIndex: selectedDayIndex,
       score,
-      totalQuestions: currentDay.practiceQuestions.length,
+      totalQuestions: practiceQuestions.length,
       correctAnswers: correctCount,
       date: new Date().toISOString()
     };
@@ -240,7 +296,20 @@ export default function ModuleSection({
     });
   };
 
-  const handleResetPractice = () => {
+  // Mid-attempt "start over" — clears selections but keeps the same sampled question set.
+  const handleClearPracticeAnswers = () => {
+    setPracticeAnswers({});
+    setPracticeSubmitted(false);
+    setAiExplanations({});
+  };
+
+  // Post-submission retry — a genuinely new attempt, so it samples a fresh random set.
+  const handleRetryPractice = () => {
+    const day = modules[selectedModuleIndex]?.days[selectedDayIndex];
+    if (day) {
+      const shuffled = [...day.practiceQuestions].sort(() => 0.5 - Math.random());
+      setPracticeQuestions(shuffled.slice(0, Math.min(PRACTICE_QUESTION_COUNT, shuffled.length)));
+    }
     setPracticeAnswers({});
     setPracticeSubmitted(false);
     setAiExplanations({});
@@ -341,9 +410,8 @@ export default function ModuleSection({
             onClick={() => {
               onSelectModule(mod.index);
               setSelectedDayIndex(0);
-              handleResetPractice();
-              // Exam state for the target module is restored (or blanked) by the
-              // selectedModuleIndex effect above — no manual reset needed here.
+              // Practice and exam state for the target module/day are restored (or sampled
+              // fresh) by their respective effects above — no manual reset needed here.
             }}
             className={`py-3 px-5 text-sm font-semibold tracking-tight border-b-2 transition-all mr-2 cursor-pointer focus:outline-none ${
               selectedModuleIndex === mod.index
@@ -425,10 +493,7 @@ export default function ModuleSection({
                   return (
                     <button
                       key={idx}
-                      onClick={() => {
-                        setSelectedDayIndex(idx);
-                        handleResetPractice();
-                      }}
+                      onClick={() => setSelectedDayIndex(idx)}
                       className={`w-full text-left p-3 rounded-xl text-xs transition-all flex items-center justify-between border cursor-pointer focus:outline-none ${
                         selectedDayIndex === idx
                           ? 'border-indigo-200 bg-indigo-50/50 text-indigo-800 font-bold'
@@ -578,7 +643,7 @@ export default function ModuleSection({
                   <div className="flex items-center justify-between">
                     <h3 className="text-base font-bold font-display text-slate-900">Practice &amp; Daily Check: {currentDay.title}</h3>
                     <button
-                      onClick={handleResetPractice}
+                      onClick={handleClearPracticeAnswers}
                       className="text-xs font-medium text-slate-500 hover:text-slate-800 focus:outline-none cursor-pointer"
                     >
                       Reiniciar Ejercicios
@@ -586,7 +651,7 @@ export default function ModuleSection({
                   </div>
 
                   <div className="space-y-8 divide-y divide-slate-100">
-                    {currentDay.practiceQuestions.map((q, qIdx) => {
+                    {practiceQuestions.map((q, qIdx) => {
                       const isSelected = (opt: 'a'|'b'|'c'|'d') => practiceAnswers[q.id] === opt;
                       const hasSelected = !!practiceAnswers[q.id];
                       const explainState = aiExplanations[q.id];
@@ -681,7 +746,7 @@ export default function ModuleSection({
                   {!practiceSubmitted ? (
                     <button
                       onClick={handlePracticeSubmit}
-                      disabled={Object.keys(practiceAnswers).length < currentDay.practiceQuestions.length}
+                      disabled={Object.keys(practiceAnswers).length < practiceQuestions.length}
                       className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl text-sm font-semibold transition-all focus:outline-none cursor-pointer"
                     >
                       Enviar Respuestas de Práctica
@@ -689,7 +754,7 @@ export default function ModuleSection({
                   ) : (
                     <div className="text-center py-2">
                       <button
-                        onClick={handleResetPractice}
+                        onClick={handleRetryPractice}
                         className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 underline focus:outline-none cursor-pointer"
                       >
                         Intentar de Nuevo la Práctica
