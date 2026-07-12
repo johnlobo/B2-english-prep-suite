@@ -5,6 +5,7 @@ import { Question, ExamAttempt } from '../types';
 
 const STORAGE_KEY = 'b2_simulation_inprogress';
 const DURATION_SECONDS = 30 * 60;
+const QUESTION_COUNT = 10;
 
 interface SavedSimulationState {
   questionIds: string[];
@@ -40,7 +41,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
   const timerRef = useRef<any>(null);
 
   useEffect(() => {
-    // Pick 20 random questions from the pool, unless there's an unfinished attempt to offer resuming.
+    // Pick a fresh random set from the pool, unless there's an unfinished attempt to offer resuming.
     if (questions.length === 0 || simulationQuestions.length > 0) return;
 
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -61,7 +62,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
     }
 
     const shuffled = [...questions].sort(() => 0.5 - Math.random());
-    setSimulationQuestions(shuffled.slice(0, 20));
+    setSimulationQuestions(shuffled.slice(0, QUESTION_COUNT));
   }, [questions, simulationQuestions.length]);
 
   // Persist progress on every change while the attempt is active, so it survives a reload/close.
@@ -122,7 +123,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
     localStorage.removeItem(STORAGE_KEY);
     setResumeData(null);
     const shuffled = [...questions].sort(() => 0.5 - Math.random());
-    setSimulationQuestions(shuffled.slice(0, 20));
+    setSimulationQuestions(shuffled.slice(0, QUESTION_COUNT));
   };
 
   const handleSelectAnswer = (qId: string, opt: string) => {
@@ -146,7 +147,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
       }
     });
 
-    const calculatedScore = Math.round((correctCount / 20) * 100);
+    const calculatedScore = Math.round((correctCount / simulationQuestions.length) * 100);
     setCorrectAnswersCount(correctCount);
     setScore(calculatedScore);
     setIsFinished(true);
@@ -157,7 +158,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
       id: 'sim_' + Math.random().toString(36).substr(2, 9),
       type: 'simulation',
       score: calculatedScore,
-      totalQuestions: 20,
+      totalQuestions: simulationQuestions.length,
       correctAnswers: correctCount,
       date: new Date().toISOString(),
       answers
@@ -220,7 +221,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
             <div className="space-y-2">
               <h2 className="text-xl sm:text-2xl font-extrabold font-display text-slate-900">Simulación de Examen B2 First</h2>
               <p className="text-sm text-slate-600 max-w-xl mx-auto leading-relaxed">
-                Esta simulación consta de <strong>20 preguntas de opción múltiple</strong> extraídas aleatoriamente de todos los módulos teóricos. Tendrás un límite de <strong>30 minutos</strong>.
+                Esta simulación consta de <strong>{QUESTION_COUNT} preguntas de opción múltiple</strong> extraídas aleatoriamente de todos los módulos teóricos. Tendrás un límite de <strong>30 minutos</strong>.
               </p>
             </div>
 
@@ -231,7 +232,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
               </div>
               <p>• Puedes marcar preguntas para revisar más tarde.</p>
               <p>• Al pulsar en Enviar obtendrás la calificación y explicaciones.</p>
-              <p>• El examen requiere un <strong>80% (16 de 20)</strong> para una calificación sobresaliente.</p>
+              <p>• El examen requiere un <strong>80% ({Math.round(QUESTION_COUNT * 0.8)} de {QUESTION_COUNT})</strong> para una calificación sobresaliente.</p>
             </div>
 
             <div className="pt-4 flex justify-center space-x-3">
@@ -265,7 +266,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
               <div className="flex items-center space-x-3 text-slate-700 font-medium text-xs sm:text-sm">
                 <span className="font-bold text-slate-900 font-display">Simulacro B2 First</span>
                 <span className="bg-slate-100 px-2 py-0.5 rounded-full text-[11px] font-semibold">
-                  Pregunta {currentIdx + 1} de 20
+                  Pregunta {currentIdx + 1} de {simulationQuestions.length}
                 </span>
               </div>
 
@@ -357,7 +358,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
                     <span>Anterior</span>
                   </button>
 
-                  {currentIdx < 19 ? (
+                  {currentIdx < simulationQuestions.length - 1 ? (
                     <button
                       onClick={() => setCurrentIdx(prev => prev + 1)}
                       className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-colors cursor-pointer text-xs sm:text-sm focus:outline-none"
@@ -405,7 +406,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
                 <div className="bg-slate-50 p-4 rounded-2xl">
                   <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">Aciertos</span>
                   <span className="text-2xl font-bold font-display text-slate-900 mt-0.5 block">
-                    {correctAnswersCount} / 20
+                    {correctAnswersCount} / {simulationQuestions.length}
                   </span>
                 </div>
               </div>

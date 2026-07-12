@@ -32,38 +32,75 @@ export default function ModuleSection({
   const [aiExplanations, setAiExplanations] = useState<{ [qId: string]: { loading: boolean; text?: string } }>({});
 
   // Exam state
+  const [examQuestions, setExamQuestions] = useState<Question[]>([]);
   const [examAnswers, setExamAnswers] = useState<{ [qId: string]: string }>({});
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [examScore, setExamScore] = useState(0);
 
+  const EXAM_QUESTION_COUNT = 10;
   const examStorageKey = (modIndex: number) => `b2_module_exam_inprogress_M${modIndex}`;
 
-  // Restore (or start blank) whenever the selected module changes, so an in-progress control
-  // exam survives switching tabs/modules and reloading, instead of being silently discarded.
+  // Pool a control exam attempt samples from: every practice question across the module's days
+  // plus its curated control-exam set. Sampling from the wider pool (not just the fixed 10-question
+  // controlExam array) is what makes a fresh attempt actually differ from the last one.
+  const buildModuleExamPool = (mod: ModuleData): Question[] => {
+    const pool: Question[] = [];
+    mod.days.forEach((day) => pool.push(...day.practiceQuestions));
+    pool.push(...mod.controlExam);
+    return pool;
+  };
+
+  const sampleQuestions = (pool: Question[], count: number): Question[] => {
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, count);
+  };
+
+  // Restore an in-progress attempt (same question set + answers) whenever the selected module
+  // changes, so it survives switching tabs/modules and reloading. If there's nothing to resume,
+  // sample a brand-new random set — this only happens on a genuinely new attempt (submit or
+  // "Reintentar" both clear the saved state), so retaking the exam never repeats the same set.
   useEffect(() => {
+    const mod = modules[selectedModuleIndex];
+    if (!mod) return;
+    const pool = buildModuleExamPool(mod);
+
     const saved = localStorage.getItem(examStorageKey(selectedModuleIndex));
     if (saved) {
       try {
-        setExamAnswers(JSON.parse(saved));
+        const data: { questionIds: string[]; answers: { [qId: string]: string } } = JSON.parse(saved);
+        const restored = data.questionIds
+          .map((id) => pool.find((q) => q.id === id))
+          .filter((q): q is Question => !!q);
+        if (restored.length === data.questionIds.length && restored.length > 0) {
+          setExamQuestions(restored);
+          setExamAnswers(data.answers || {});
+          setExamSubmitted(false);
+          setExamScore(0);
+          return;
+        }
       } catch {
-        setExamAnswers({});
+        // fall through to discard the unreadable saved state and start a fresh attempt
       }
-    } else {
-      setExamAnswers({});
+      localStorage.removeItem(examStorageKey(selectedModuleIndex));
     }
+
+    setExamQuestions(sampleQuestions(pool, Math.min(EXAM_QUESTION_COUNT, pool.length)));
+    setExamAnswers({});
     setExamSubmitted(false);
     setExamScore(0);
-  }, [selectedModuleIndex]);
+  }, [selectedModuleIndex, modules]);
 
-  // Persist in-progress answers on every change; clear once there's nothing left to save.
+  // Persist in-progress answers (and the sampled question set) on every change; clear once
+  // there's nothing left to save.
   useEffect(() => {
     if (examSubmitted) return;
     if (Object.keys(examAnswers).length === 0) {
       localStorage.removeItem(examStorageKey(selectedModuleIndex));
     } else {
-      localStorage.setItem(examStorageKey(selectedModuleIndex), JSON.stringify(examAnswers));
+      const data = { questionIds: examQuestions.map((q) => q.id), answers: examAnswers };
+      localStorage.setItem(examStorageKey(selectedModuleIndex), JSON.stringify(data));
     }
-  }, [examAnswers, examSubmitted, selectedModuleIndex]);
+  }, [examAnswers, examSubmitted, selectedModuleIndex, examQuestions]);
 
   // Study Notes state
   const [noteText, setNoteText] = useState('');
@@ -243,11 +280,11 @@ export default function ModuleSection({
 
   const handleExamSubmit = () => {
     let correctCount = 0;
-    currentModule.controlExam.forEach(q => {
+    examQuestions.forEach(q => {
       if (examAnswers[q.id] === q.correctOption) correctCount++;
     });
 
-    const score = Math.round((correctCount / currentModule.controlExam.length) * 100);
+    const score = Math.round((correctCount / examQuestions.length) * 100);
     setExamScore(score);
     setExamSubmitted(true);
     localStorage.removeItem(examStorageKey(selectedModuleIndex));
@@ -258,7 +295,7 @@ export default function ModuleSection({
       type: 'module' as const,
       moduleIndex: selectedModuleIndex,
       score,
-      totalQuestions: currentModule.controlExam.length,
+      totalQuestions: examQuestions.length,
       correctAnswers: correctCount,
       date: new Date().toISOString(),
       answers: examAnswers
@@ -270,6 +307,11 @@ export default function ModuleSection({
   };
 
   const handleResetExam = () => {
+    const mod = modules[selectedModuleIndex];
+    if (mod) {
+      const pool = buildModuleExamPool(mod);
+      setExamQuestions(sampleQuestions(pool, Math.min(EXAM_QUESTION_COUNT, pool.length)));
+    }
     setExamAnswers({});
     setExamSubmitted(false);
     setExamScore(0);
@@ -734,7 +776,7 @@ export default function ModuleSection({
                   </div>
 
                   <div className="space-y-8 divide-y divide-slate-100">
-                    {currentModule.controlExam.map((q, qIdx) => {
+                    {examQuestions.map((q, qIdx) => {
                       const hasSelected = !!examAnswers[q.id];
                       return (
                         <div key={q.id} className="pt-6 first:pt-0 space-y-4">
@@ -792,7 +834,7 @@ export default function ModuleSection({
                   {!examSubmitted ? (
                     <button
                       onClick={handleExamSubmit}
-                      disabled={Object.keys(examAnswers).length < currentModule.controlExam.length}
+                      disabled={Object.keys(examAnswers).length < examQuestions.length}
                       className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl text-sm font-semibold transition-all focus:outline-none cursor-pointer"
                     >
                       Enviar Examen de Control

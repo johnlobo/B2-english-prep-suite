@@ -27,9 +27,12 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
   // High scores and averages
   const examAttempts = progress.examAttempts || [];
   const simulations = examAttempts.filter(e => e.type === 'simulation');
-  const avgSimulationScore = simulations.length > 0 
-    ? Math.round(simulations.reduce((acc, s) => acc + s.score, 0) / simulations.length) 
+  const avgSimulationScore = simulations.length > 0
+    ? Math.round(simulations.reduce((acc, s) => acc + s.score, 0) / simulations.length)
     : 0;
+
+  // Full test history (module control exams + simulations), most recent first
+  const testHistory = [...examAttempts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   
   // Badges Earned - Configured and enriched with Milestones and Module Completion rewards
   const badges = [
@@ -249,7 +252,7 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
           {/* Simulation Scores Chart */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Progreso en Simulacros (20 Preguntas)</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Progreso en Simulacros (10 Preguntas)</h3>
               <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 py-1 px-3 rounded-full">Meta de aprobación: &gt;80%</span>
             </div>
             
@@ -272,6 +275,50 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Test History */}
+          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Historial de Tests</h3>
+            {testHistory.length > 0 ? (
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                {testHistory.map((attempt) => {
+                  const moduleTitle = attempt.type === 'module'
+                    ? modules.find((m) => m.index === attempt.moduleIndex)?.title
+                    : null;
+                  return (
+                    <div key={attempt.id} className="py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                            attempt.type === 'simulation' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {attempt.type === 'simulation' ? 'Simulacro' : 'Control de Módulo'}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {new Date(attempt.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                        {moduleTitle && (
+                          <p className="text-xs text-slate-600 mt-1 truncate">{moduleTitle}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs text-slate-500">{attempt.correctAnswers}/{attempt.totalQuestions}</span>
+                        <span className={`text-sm font-bold font-display ${attempt.score >= 80 ? 'text-green-600' : 'text-slate-900'}`}>
+                          {attempt.score}%
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 text-slate-400 text-sm space-y-2 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <AlertCircle className="w-8 h-8 text-slate-300" />
+                <span>Aún no has completado ningún test.</span>
+              </div>
+            )}
           </div>
 
           {/* Badges Section */}
