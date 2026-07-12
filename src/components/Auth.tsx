@@ -453,7 +453,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           </div>
           <div>
             <h4 className="font-semibold text-slate-900 font-display">Controles y Simulador</h4>
-            <p className="text-xs text-slate-600 mt-1">Exámenes de 10 preguntas con límite de tiempo. Analiza tu precisión de examen con &gt;80% de aciertos.</p>
+            <p className="text-xs text-slate-600 mt-1">Exámenes de 40 preguntas con límite de tiempo. Analiza tu precisión de examen con &gt;80% de aciertos.</p>
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-3">

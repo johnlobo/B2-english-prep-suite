@@ -252,7 +252,7 @@ export default function Dashboard({ user, progress, modules, onSelectTab, onStar
           {/* Simulation Scores Chart */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Progreso en Simulacros (10 Preguntas)</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Progreso en Simulacros (40 Preguntas)</h3>
               <span className="text-xs text-indigo-600 font-semibold bg-indigo-50 py-1 px-3 rounded-full">Meta de aprobación: &gt;80%</span>
             </div>
             

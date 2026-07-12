@@ -37,22 +37,27 @@ export default function ModuleSection({
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [examScore, setExamScore] = useState(0);
 
-  const EXAM_QUESTION_COUNT = 10;
+  const QUESTIONS_PER_DAY = 2;
   const examStorageKey = (modIndex: number) => `b2_module_exam_inprogress_M${modIndex}`;
 
-  // Pool a control exam attempt samples from: every practice question across the module's days
-  // plus its curated control-exam set. Sampling from the wider pool (not just the fixed 10-question
-  // controlExam array) is what makes a fresh attempt actually differ from the last one.
-  const buildModuleExamPool = (mod: ModuleData): Question[] => {
-    const pool: Question[] = [];
-    mod.days.forEach((day) => pool.push(...day.practiceQuestions));
-    pool.push(...mod.controlExam);
-    return pool;
+  // End-of-module exam: guarantees coverage of every day in the module (QUESTIONS_PER_DAY
+  // random practice questions from each), rather than a flat random pool that could by chance
+  // skip a day entirely.
+  const sampleModuleExamQuestions = (mod: ModuleData): Question[] => {
+    const picked: Question[] = [];
+    mod.days.forEach((day) => {
+      const shuffled = [...day.practiceQuestions].sort(() => 0.5 - Math.random());
+      picked.push(...shuffled.slice(0, QUESTIONS_PER_DAY));
+    });
+    return picked;
   };
 
-  const sampleQuestions = (pool: Question[], count: number): Question[] => {
-    const shuffled = [...pool].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, count);
+  // Flat lookup pool (every practice question across the module's days) used only to resolve a
+  // saved attempt's question ids back into Question objects — not for sampling a new attempt.
+  const allModuleQuestions = (mod: ModuleData): Question[] => {
+    const all: Question[] = [];
+    mod.days.forEach((day) => all.push(...day.practiceQuestions));
+    return all;
   };
 
   // Restore an in-progress attempt (same question set + answers) whenever the selected module
@@ -62,12 +67,12 @@ export default function ModuleSection({
   useEffect(() => {
     const mod = modules[selectedModuleIndex];
     if (!mod) return;
-    const pool = buildModuleExamPool(mod);
 
     const saved = localStorage.getItem(examStorageKey(selectedModuleIndex));
     if (saved) {
       try {
         const data: { questionIds: string[]; answers: { [qId: string]: string } } = JSON.parse(saved);
+        const pool = allModuleQuestions(mod);
         const restored = data.questionIds
           .map((id) => pool.find((q) => q.id === id))
           .filter((q): q is Question => !!q);
@@ -84,7 +89,7 @@ export default function ModuleSection({
       localStorage.removeItem(examStorageKey(selectedModuleIndex));
     }
 
-    setExamQuestions(sampleQuestions(pool, Math.min(EXAM_QUESTION_COUNT, pool.length)));
+    setExamQuestions(sampleModuleExamQuestions(mod));
     setExamAnswers({});
     setExamSubmitted(false);
     setExamScore(0);
@@ -301,16 +306,25 @@ export default function ModuleSection({
       answers: examAnswers
     };
 
-    onUpdateProgress({
+    const updates: Partial<UserProgress> = {
       examAttempts: [...(progress.examAttempts || []), newAttempt]
-    });
+    };
+
+    // A perfect score on the end-of-module exam demonstrates mastery of every day's material
+    // already, so mark the whole module's theory as read instead of making the student click
+    // through each day's "Marcar como leída" separately.
+    if (score === 100) {
+      const moduleTheoryKeys = currentModule.days.map((_, dIdx) => `M${selectedModuleIndex}-D${dIdx}`);
+      updates.completedTheory = Array.from(new Set([...progress.completedTheory, ...moduleTheoryKeys]));
+    }
+
+    onUpdateProgress(updates);
   };
 
   const handleResetExam = () => {
     const mod = modules[selectedModuleIndex];
     if (mod) {
-      const pool = buildModuleExamPool(mod);
-      setExamQuestions(sampleQuestions(pool, Math.min(EXAM_QUESTION_COUNT, pool.length)));
+      setExamQuestions(sampleModuleExamQuestions(mod));
     }
     setExamAnswers({});
     setExamSubmitted(false);

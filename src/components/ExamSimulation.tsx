@@ -5,7 +5,7 @@ import { Question, ExamAttempt } from '../types';
 
 const STORAGE_KEY = 'b2_simulation_inprogress';
 const DURATION_SECONDS = 30 * 60;
-const QUESTION_COUNT = 10;
+const QUESTION_COUNT = 40;
 
 interface SavedSimulationState {
   questionIds: string[];
