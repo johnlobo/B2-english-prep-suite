@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Award, CheckCircle, Clock, AlertCircle, RefreshCw, Sparkles, ChevronLeft, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Question, ExamAttempt } from '../types';
+import ResultModal from './ResultModal';
 
 const STORAGE_KEY = 'b2_simulation_inprogress';
 const DURATION_SECONDS = 30 * 60;
@@ -37,6 +38,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
   const [score, setScore] = useState(0);
   const [correctAnswersCount, setCorrectAnswersCount] = useState(0);
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  const [showResultModal, setShowResultModal] = useState(false);
 
   const timerRef = useRef<any>(null);
 
@@ -151,6 +153,7 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
     setCorrectAnswersCount(correctCount);
     setScore(calculatedScore);
     setIsFinished(true);
+    setShowResultModal(true);
     localStorage.removeItem(STORAGE_KEY);
 
     // Save exam attempt in progress
@@ -481,6 +484,16 @@ export default function ExamSimulation({ questions, onComplete, onCancel }: Exam
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ResultModal
+        open={showResultModal}
+        kind="simulation"
+        score={score}
+        correct={correctAnswersCount}
+        total={simulationQuestions.length}
+        passThreshold={80}
+        onClose={() => setShowResultModal(false)}
+      />
     </div>
   );
 }

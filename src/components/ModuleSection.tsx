@@ -5,6 +5,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { authedFetchWithRetry } from '../lib/fetchWithRetry';
 import { ModuleData, Question, UserProgress } from '../types';
+import ResultModal from './ResultModal';
 
 interface ModuleSectionProps {
   modules: ModuleData[];
@@ -31,6 +32,10 @@ export default function ModuleSection({
   const [practiceAnswers, setPracticeAnswers] = useState<{ [qId: string]: string }>({});
   const [practiceSubmitted, setPracticeSubmitted] = useState(false);
   const [aiExplanations, setAiExplanations] = useState<{ [qId: string]: { loading: boolean; text?: string } }>({});
+  const [showPracticeResultModal, setShowPracticeResultModal] = useState(false);
+  const [practiceResult, setPracticeResult] = useState<{ correct: number; total: number; score: number } | null>(null);
+  const [showExamResultModal, setShowExamResultModal] = useState(false);
+  const [examResult, setExamResult] = useState<{ correct: number; total: number; score: number } | null>(null);
 
   const PRACTICE_QUESTION_COUNT = 10;
   const practiceStorageKey = (modIndex: number, dayIndex: number) =>
@@ -312,6 +317,8 @@ export default function ModuleSection({
     }
 
     onUpdateProgress(updates);
+    setPracticeResult({ correct: correctCount, total: practiceQuestions.length, score });
+    setShowPracticeResultModal(true);
   };
 
   // Mid-attempt "start over" — clears selections but keeps the same sampled question set.
@@ -331,6 +338,7 @@ export default function ModuleSection({
     setPracticeAnswers({});
     setPracticeSubmitted(false);
     setAiExplanations({});
+    setPracticeResult(null);
   };
 
   // Query Gemini Tutor for detail explanation of a question
@@ -406,6 +414,8 @@ export default function ModuleSection({
     }
 
     onUpdateProgress(updates);
+    setExamResult({ correct: correctCount, total: examQuestions.length, score });
+    setShowExamResultModal(true);
   };
 
   const handleResetExam = () => {
@@ -416,6 +426,7 @@ export default function ModuleSection({
     setExamAnswers({});
     setExamSubmitted(false);
     setExamScore(0);
+    setExamResult(null);
   };
 
   return (
@@ -687,6 +698,29 @@ export default function ModuleSection({
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold rounded-2xl p-4 flex items-center space-x-2">
                       <span className="text-xl">🌟</span>
                       <span>¡100% correcto! Esta práctica queda guardada como dominada. Puedes repetirla cuando quieras sin perder este logro.</span>
+                    </div>
+                  )}
+
+                  {(progress.practiceAttempts[theoryKey] || []).length > 0 && (
+                    <div className="bg-slate-50 rounded-2xl border border-slate-100 p-4 space-y-2">
+                      <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Historial de Intentos de este Día
+                      </h4>
+                      <div className="divide-y divide-slate-200">
+                        {[...(progress.practiceAttempts[theoryKey] || [])]
+                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                          .map((attempt, aIdx) => (
+                            <div key={aIdx} className="py-2 flex items-center justify-between text-xs">
+                              <span className="text-slate-500">
+                                {new Date(attempt.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </span>
+                              <span className="text-slate-500">{attempt.correctAnswers}/{attempt.totalQuestions}</span>
+                              <span className={`font-bold font-display ${attempt.score === 100 ? 'text-amber-600' : 'text-slate-900'}`}>
+                                {attempt.score}%
+                              </span>
+                            </div>
+                          ))}
+                      </div>
                     </div>
                   )}
 
@@ -977,6 +1011,29 @@ export default function ModuleSection({
           </AnimatePresence>
         </div>
       </div>
+
+      {practiceResult && (
+        <ResultModal
+          open={showPracticeResultModal}
+          kind="practice"
+          score={practiceResult.score}
+          correct={practiceResult.correct}
+          total={practiceResult.total}
+          onClose={() => setShowPracticeResultModal(false)}
+        />
+      )}
+
+      {examResult && (
+        <ResultModal
+          open={showExamResultModal}
+          kind="exam"
+          score={examResult.score}
+          correct={examResult.correct}
+          total={examResult.total}
+          passThreshold={80}
+          onClose={() => setShowExamResultModal(false)}
+        />
+      )}
     </div>
   );
 }
