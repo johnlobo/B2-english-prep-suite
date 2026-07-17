@@ -31,3 +31,17 @@ export function calculateGlobalProgress(progress: UserProgress, modules: ModuleD
 
   return Math.round((theoryScore * THEORY_WEIGHT + testsScore * TESTS_WEIGHT) * 100);
 }
+
+/** A module is "superado" once every one of its theory days is marked as read — same definition the module-completion badges on the Dashboard use. */
+export function isModuleSuperado(mod: ModuleData, progress: UserProgress): boolean {
+  if (mod.days.length === 0) return false;
+  return mod.days.every((_, dIdx) => progress.completedTheory.includes(`M${mod.index}-D${dIdx}`));
+}
+
+/** First module (in order) not yet superado, so opening the Módulos section jumps straight to
+ * where the student left off instead of always defaulting to Módulo 1. Falls back to the first
+ * module if every module is already superado. */
+export function getFirstIncompleteModuleIndex(progress: UserProgress, modules: ModuleData[]): number {
+  const next = modules.find((mod) => !isModuleSuperado(mod, progress));
+  return next ? next.index : (modules[0]?.index ?? 0);
+}

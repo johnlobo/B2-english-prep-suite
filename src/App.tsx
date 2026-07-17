@@ -32,7 +32,7 @@ import UserManagement from './components/UserManagement';
 // Import Static Data (bundled fallback / seed source — Firestore is the live source of truth)
 import { DEFAULT_B2_DATA as b2Modules } from './data/b2Data';
 import { getCompleteModules, fetchContentMeta } from './lib/content';
-import { calculateGlobalProgress } from './lib/progress';
+import { calculateGlobalProgress, getFirstIncompleteModuleIndex } from './lib/progress';
 import { UserProgress, ModuleData, Question, PodcastEpisode } from './types';
 
 // Set at build time from the GitHub Release tag (see Dockerfile / release.yml); falls back to
@@ -349,7 +349,10 @@ export default function App() {
             </button>
 
             <button
-              onClick={() => setActiveTab('modules')}
+              onClick={() => {
+                setActiveTab('modules');
+                setSelectedModuleIndex(getFirstIncompleteModuleIndex(progress, modules));
+              }}
               className={`w-full flex items-center space-x-3 py-3 px-4 rounded-xl text-left text-sm font-semibold transition-all focus:outline-none cursor-pointer ${
                 activeTab === 'modules' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
               }`}
@@ -426,6 +429,8 @@ export default function App() {
                     setActiveTab(tab);
                     if (moduleIdx !== undefined) {
                       setSelectedModuleIndex(moduleIdx);
+                    } else if (tab === 'modules') {
+                      setSelectedModuleIndex(getFirstIncompleteModuleIndex(progress, modules));
                     }
                   }}
                   onStartSimulation={() => setActiveTab('simulacion')}
@@ -558,7 +563,10 @@ export default function App() {
         </button>
 
         <button
-          onClick={() => setActiveTab('modules')}
+          onClick={() => {
+            setActiveTab('modules');
+            setSelectedModuleIndex(getFirstIncompleteModuleIndex(progress, modules));
+          }}
           className={`flex flex-col items-center justify-center w-12 h-12 rounded-xl focus:outline-none ${
             activeTab === 'modules' ? 'text-indigo-600' : 'text-slate-400'
           }`}
