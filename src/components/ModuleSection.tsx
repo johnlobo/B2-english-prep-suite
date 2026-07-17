@@ -249,6 +249,13 @@ export default function ModuleSection({
   const theoryKey = `M${selectedModuleIndex}-D${selectedDayIndex}`;
   const isTheoryCompleted = progress.completedTheory.includes(theoryKey);
 
+  // Practice Mastery (100% on at least one attempt for this day)
+  const isPracticeMastered = (progress.masteredPractice || []).includes(theoryKey);
+  const isCurrentAttemptPerfect =
+    practiceSubmitted &&
+    practiceQuestions.length > 0 &&
+    practiceQuestions.every(q => practiceAnswers[q.id] === q.correctOption);
+
   const handleMarkTheoryRead = () => {
     let completed = [...progress.completedTheory];
     if (!completed.includes(theoryKey)) {
@@ -288,12 +295,23 @@ export default function ModuleSection({
 
     const key = `M${selectedModuleIndex}-D${selectedDayIndex}`;
     const previousAttempts = progress.practiceAttempts[key] || [];
-    onUpdateProgress({
+    const updates: Partial<UserProgress> = {
       practiceAttempts: {
         ...progress.practiceAttempts,
         [key]: [...previousAttempts, newAttempt]
       }
-    });
+    };
+
+    // A perfect score marks this day's practice as mastered permanently — repeating it later
+    // (even with a worse score) never removes it from the list, same as exam attempts below.
+    if (score === 100) {
+      const mastered = progress.masteredPractice || [];
+      if (!mastered.includes(key)) {
+        updates.masteredPractice = [...mastered, key];
+      }
+    }
+
+    onUpdateProgress(updates);
   };
 
   // Mid-attempt "start over" — clears selections but keeps the same sampled question set.
@@ -410,6 +428,7 @@ export default function ModuleSection({
             onClick={() => {
               onSelectModule(mod.index);
               setSelectedDayIndex(0);
+              setActiveSubTab('theory');
               // Practice and exam state for the target module/day are restored (or sampled
               // fresh) by their respective effects above — no manual reset needed here.
             }}
@@ -490,6 +509,7 @@ export default function ModuleSection({
                 {currentModule.days.map((day, idx) => {
                   const dayKey = `M${selectedModuleIndex}-D${idx}`;
                   const isRead = progress.completedTheory.includes(dayKey);
+                  const isMastered = (progress.masteredPractice || []).includes(dayKey);
                   return (
                     <button
                       key={idx}
@@ -501,7 +521,10 @@ export default function ModuleSection({
                       }`}
                     >
                       <span className="truncate pr-2">{day.title}</span>
-                      {isRead && <span className="text-indigo-600 font-bold">✓</span>}
+                      <span className="flex items-center space-x-1 shrink-0">
+                        {isRead && <span className="text-indigo-600 font-bold" title="Teoría leída">✓</span>}
+                        {isMastered && <span title="Práctica dominada al 100%">🌟</span>}
+                      </span>
                     </button>
                   );
                 })}
@@ -641,7 +664,17 @@ export default function ModuleSection({
               >
                 <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-base font-bold font-display text-slate-900">Practice &amp; Daily Check: {currentDay.title}</h3>
+                    <h3 className="text-base font-bold font-display text-slate-900 flex items-center gap-2">
+                      <span>Practice &amp; Daily Check: {currentDay.title}</span>
+                      {isPracticeMastered && !isCurrentAttemptPerfect && (
+                        <span
+                          className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 py-1 px-2 rounded-full"
+                          title="Ya conseguiste un 100% en esta práctica anteriormente"
+                        >
+                          🌟 Dominada
+                        </span>
+                      )}
+                    </h3>
                     <button
                       onClick={handleClearPracticeAnswers}
                       className="text-xs font-medium text-slate-500 hover:text-slate-800 focus:outline-none cursor-pointer"
@@ -649,6 +682,13 @@ export default function ModuleSection({
                       Reiniciar Ejercicios
                     </button>
                   </div>
+
+                  {isCurrentAttemptPerfect && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold rounded-2xl p-4 flex items-center space-x-2">
+                      <span className="text-xl">🌟</span>
+                      <span>¡100% correcto! Esta práctica queda guardada como dominada. Puedes repetirla cuando quieras sin perder este logro.</span>
+                    </div>
+                  )}
 
                   <div className="space-y-8 divide-y divide-slate-100">
                     {practiceQuestions.map((q, qIdx) => {

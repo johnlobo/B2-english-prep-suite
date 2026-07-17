@@ -25,7 +25,7 @@ function defaultUserData(uid: string, email: string): SessionUser {
 }
 
 function defaultProgressData(uid: string): UserProgress {
-  return { userId: uid, completedTheory: [], practiceAttempts: {}, examAttempts: [] };
+  return { userId: uid, completedTheory: [], practiceAttempts: {}, masteredPractice: [], examAttempts: [] };
 }
 
 export async function isAdminSetupComplete(): Promise<boolean> {

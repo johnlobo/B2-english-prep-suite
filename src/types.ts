@@ -29,6 +29,7 @@ export interface UserProgress {
   userId: string;
   completedTheory: string[]; // List of "M{index}-D{index}" completed
   practiceAttempts: { [key: string]: PracticeAttempt[] }; // key: "M{index}-D{index}"
+  masteredPractice?: string[]; // List of "M{index}-D{index}" that reached 100% on a practice attempt at least once
   examAttempts: ExamAttempt[];
   googleSheetUrl?: string;
   lastSyncedAt?: string;

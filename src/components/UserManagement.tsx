@@ -169,6 +169,7 @@ export default function UserManagement({ currentUserId }: UserManagementProps) {
         userId: uid,
         completedTheory: [],
         practiceAttempts: {},
+        masteredPractice: [],
         examAttempts: []
       };
       await setDoc(progressRef, progressDoc);

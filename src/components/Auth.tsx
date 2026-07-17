@@ -126,6 +126,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
               userId: uid,
               completedTheory: [],
               practiceAttempts: {},
+              masteredPractice: [],
               examAttempts: []
             });
           } else {
@@ -231,6 +232,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
         userId: currentUser.uid,
         completedTheory: [],
         practiceAttempts: {},
+        masteredPractice: [],
         examAttempts: []
       };
 
